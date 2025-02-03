@@ -24,20 +24,15 @@ class BlockDistribution : public DistributionStrategy {
 public:
   BlockDistribution(std::vector<size_t> distribution) : _distribution(std::move(distribution)) {}
 
-  // Worker with rank k stores the indices between _distribution[rank] (inclusive) and _distribution[rank + 1]
-  // (exclusive)
+  // Worker with rank k stores the indices between _distribution[k] (inclusive) and _distribution[k + 1] (exclusive)
   size_t owner(size_t global_index) const override {
     auto it = std::upper_bound(_distribution.begin(), _distribution.end(), global_index);
     return std::distance(_distribution.begin(), it) - 1;
   }
 
-  size_t local_size(int rank) const override {
-    return _distribution[rank + 1] - _distribution[rank];
-  }
+  size_t local_size(int rank) const override { return _distribution[rank + 1] - _distribution[rank]; }
 
-  size_t to_local_index(int rank, size_t global_index) const override { 
-    std::cout << "_rank: " << rank << " global_index: " << global_index << " _dist[rank]: " << _distribution[rank] << '\n';
-    return global_index - _distribution[rank]; }
+  size_t to_local_index(int rank, size_t global_index) const override { return global_index - _distribution[rank]; }
 
   size_t to_global_index(int rank, size_t local_index) const override { return local_index + _distribution[rank]; }
 
