@@ -55,7 +55,6 @@ public:
     }
 
     _comm.alltoallv(kamping::send_buf(send_buffer), kamping::send_counts(send_counts), kamping::recv_buf<kamping::BufferResizePolicy::grow_only>(recv_buffer));
-    _comm.barrier();
 
     for (const auto &update : recv_buffer) {
       size_t local_index = _strategy->to_local_index(_rank, update.global_index);
