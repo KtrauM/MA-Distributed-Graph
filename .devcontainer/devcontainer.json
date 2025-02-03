@@ -6,6 +6,9 @@
 	"build": {
 		"dockerfile": "Dockerfile"
 	},
+	"mounts": [
+		"source=${env:USERPROFILE}\\.gitconfig,target=/root/.gitconfig,type=bind,consistency=cached"
+	],
 	"customizations": {
 		"vscode": {
 			"extensions": [

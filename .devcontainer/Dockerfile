@@ -22,7 +22,7 @@ ARG LLVM_VERSION
 RUN apt-get update && apt-get install -y locales && rm -rf /var/lib/apt/lists/* \
 	&& localedef -i en_US -c -f UTF-8 -A /usr/share/locale/locale.alias en_US.UTF-8
 
-ENV LANG en_US.utf8
+ENV LANG=en_US.utf8
 ENV DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /tmp
@@ -126,7 +126,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     sed -i "s/plugins=(git)/plugins=(git zsh-completions zsh-autosuggestions zsh-history-substring-search)/" /root/.zshrc && \
     sed -i "s/ZSH_THEME=\"agnoster\"/ZSH_THEME=\"robbyrussell\"/" /root/.zshrc
 
-ENV SHELL /bin/zsh
+ENV SHELL=/bin/zsh
 
 RUN sh -c "$(curl -fsSL https://starship.rs/install.sh)" -- --yes && \
     echo 'eval "$(starship init bash)"' >> ~/.bashrc && \
@@ -182,5 +182,9 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && \
     echo "export PATH=$PATH" > /etc/environment
 
 ENV LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
+
+# MPI
+ENV OMPI_ALLOW_RUN_AS_ROOT=1
+ENV OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1
 
 WORKDIR /app
