@@ -21,7 +21,7 @@ template <typename T> struct ArrayUpdate {
 template <typename T> class DistributedArray {
 public:
   DistributedArray(std::unique_ptr<DistributionStrategy> strategy, kamping::Communicator<> const &comm)
-      : _strategy(std::move(strategy)), _rank(comm.rank()), _num_ranks(comm.size()), _local_data(strategy->local_size(_rank), T{}) {}
+      : _strategy(std::move(strategy)), _comm(comm), _rank(comm.rank()), _num_ranks(comm.size()), _local_data(strategy->local_size(_rank), T{}) {}
 
   void set(size_t global_index, T value) {
     int owner = _strategy->owner(global_index);
