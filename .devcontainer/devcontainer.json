@@ -7,7 +7,8 @@
 		"dockerfile": "Dockerfile"
 	},
 	"mounts": [
-		"source=${env:USERPROFILE}\\.gitconfig,target=/root/.gitconfig,type=bind,consistency=cached"
+		"source=${env:USERPROFILE}\\.gitconfig,target=/root/.gitconfig,type=bind,consistency=cached",
+		"source=${env:USERPROFILE}\\.ssh,target=/root/.ssh,type=bind,readonly"
 	],
 	"customizations": {
 		"vscode": {
