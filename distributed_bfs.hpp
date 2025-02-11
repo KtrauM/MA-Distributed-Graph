@@ -1,17 +1,20 @@
 #include <kamping/collectives/allreduce.hpp>
-#include <unordered_set>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "distributed_array.hpp"
 
 template <typename T> class DistributedFrontier {
 public:
-  DistributedFrontier(std::unique_ptr<DistributionStrategy> strategy, kamping::Communicator<> comm) : _strategy(std::move(strategy)), _comm(comm) {}
+  DistributedFrontier(std::shared_ptr<DistributionStrategy> strategy, kamping::Communicator<> comm, std::vector<T> initial_frontier)
+      : _strategy(std::move(strategy)), _comm(comm) {
+    add_multiple(initial_frontier);
+  }
 
   void add(T element) {
     int owner = _strategy->owner(element);
     if (owner == _comm.rank() && _visited.find(element) == _visited.end()) {
-      _next_frontier.push_back(element);
+      _next_frontier.insert(element);
       return;
     }
     _outgoing_data[owner].push_back(element);
@@ -37,36 +40,60 @@ public:
                     kamping::recv_buf<kamping::BufferResizePolicy::grow_only>(recv_buffer));
 
     _local_frontier.clear();
-    
-    _local_frontier.insert(_local_frontier.end(), _next_frontier.begin(), _next_frontier.end());
+
+    _local_frontier.insert(_next_frontier.begin(), _next_frontier.end());
     _next_frontier.clear();
 
-    _local_frontier.insert(_local_frontier.end(), recv_buffer.begin(), recv_buffer.end());
+    _local_frontier.insert(recv_buffer.begin(), recv_buffer.end());
     _outgoing_data.clear();
+
+    for (const auto& element : _visited) {
+      _local_frontier.erase(element);
+    }
+
+    _current_step += 1;
+    for (auto const &x:_local_frontier) {
+      _visited.insert(x);
+      _distances[x] = _current_step;
+    }
+
   }
 
-  const std::vector<T> &local_frontier() const { return _local_frontier; }
+  const std::unordered_set<T> &local_frontier() const { return _local_frontier; }
+  const std::unordered_map<T, uint64_t> &distances() const { return _distances; }
+
 
 private:
-  std::unique_ptr<DistributionStrategy> _strategy;
+  std::shared_ptr<DistributionStrategy> _strategy;
   kamping::Communicator<> _comm;
-  std::vector<T> _local_frontier;
-  std::vector<T> _next_frontier;
+  std::unordered_set<T> _local_frontier;
+  std::unordered_set<T> _next_frontier;
   std::unordered_map<int, std::vector<T>> _outgoing_data;
-  std::unordered_set<size_t> _visited;
+  std::unordered_set<T> _visited;
+  std::unordered_map<T, uint64_t> _distances;
+  uint64_t _current_step = 0;
+};
+
+struct VertexEdgeMapping {
+  size_t edge_start_index; // inclusive
+  size_t edge_end_index;   // exclusive
+  VertexEdgeMapping() : edge_start_index(0), edge_end_index(0) {}
+  VertexEdgeMapping(size_t start, size_t end) : edge_start_index(start), edge_end_index(end) {}
 };
 
 struct DistributedCSRGraph {
-  // TODO: Not sure if std::pair is a valid choice here
-  // TODO: otherwise how can we handle the vertices at the end of chunk boundary, as vertex_array[v + 1] is non-local
-  distributed::DistributedArray<std::pair<size_t, size_t>> vertex_array; // {vertex_array[v], vertex_array[v + 1]}
+  distributed::DistributedArray<VertexEdgeMapping> vertex_array;
   distributed::DistributedArray<size_t> edge_array;
   std::shared_ptr<DistributionStrategy> vertex_dist;
+  DistributedCSRGraph(distributed::DistributedArray<VertexEdgeMapping> vertex_arr, distributed::DistributedArray<size_t> edge_arr,
+                      std::shared_ptr<DistributionStrategy> dist)
+      : vertex_array(std::move(vertex_arr)), edge_array(std::move(edge_arr)), vertex_dist(dist) {}
 };
 
 class DistributedBFS {
 public:
-  DistributedBFS(std::unique_ptr<DistributedCSRGraph> graph, kamping::Communicator<> const &comm) : _graph(std::move(graph)), _comm(comm) {}
+  DistributedBFS(std::unique_ptr<DistributedCSRGraph> graph, kamping::Communicator<> const &comm, std::vector<size_t> source_vertices)
+      : _graph(std::move(graph)), _comm(comm), _frontier(DistributedFrontier(graph->vertex_dist, _comm, source_vertices)) {}
 
   void run() {
     auto current_frontier = _frontier.local_frontier(); // contains ids of vertices
@@ -82,22 +109,31 @@ public:
           throw std::logic_error("Vertex " + std::to_string(vertex) + " belongs to another worker: " +
                                  std::to_string(_graph->vertex_dist->owner(vertex)) + ", but was found in worker " + std::to_string(_comm.rank()));
         }
-        // vertex array:
-        // 0   1   2    3
-        // 0,1 1,3 3,6 6,8
+
         auto [edge_index_start, edge_index_end] = _graph->vertex_array.get(vertex);
 
         for (size_t i = edge_index_start; i < edge_index_end; ++i) {
           size_t neighbor = _graph->edge_array.get(i);
           _frontier.add(neighbor);
         }
-
-        _frontier.exchange();
-        current_frontier = _frontier.local_frontier();
-        local_active = !current_frontier.empty();
-        global_active = _comm.allreduce_single(kamping::send_buf(local_active), kamping::op(kamping::ops::logical_or<>{}));
       }
+      _frontier.exchange();
+      current_frontier = _frontier.local_frontier();
+
+      std::cout << "Current frontier in PE " << _comm.rank() << '\n';
+      for (auto const &x: current_frontier) {
+        std::cout << x << ", ";
+      }
+      std::cout << '\n';
+
+      local_active = !current_frontier.empty();
+      global_active = _comm.allreduce_single(kamping::send_buf(local_active), kamping::op(kamping::ops::logical_or<>{}));
+      std::cout << "Global active " << global_active << '\n';
     }
+  }
+
+  std::unordered_map<size_t, uint64_t> getDistances() {
+    return _frontier.distances();
   }
 
 private:

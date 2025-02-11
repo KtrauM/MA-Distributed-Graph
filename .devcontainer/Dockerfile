@@ -35,6 +35,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gdb make ninja-build rsync zip sudo \
     # MPI
     libopenmpi-dev \
+    # KaGen
+    libcgal-dev libsparsehash-dev \
     # required by VCPKG
     openssh-server tar curl unzip pkg-config bash-completion aria2 mono-complete \
     # required by LLVM

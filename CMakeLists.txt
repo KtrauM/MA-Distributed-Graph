@@ -5,6 +5,7 @@ project(DistributedArray)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
+# KaMPIng 
 include(FetchContent)
 FetchContent_Declare(
   kamping
@@ -14,5 +15,15 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(kamping)
 
+# KaGen
+include(FetchContent)
+FetchContent_Declare(KaGen 
+  GIT_REPOSITORY https://github.com/sebalamm/KaGen.git 
+  GIT_TAG master)
+
+FetchContent_MakeAvailable(KaGen)
+# set_property(DIRECTORY "${KaGen_SOURCE_DIR}" PROPERTY EXCLUDE_FROM_ALL YES) # optional
+
 add_executable(myapp distribution_strategy.hpp distributed_array.hpp main.cpp)
 target_link_libraries(myapp PRIVATE kamping::kamping)
+target_link_libraries(myapp PUBLIC KaGen::KaGen)

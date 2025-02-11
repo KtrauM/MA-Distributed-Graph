@@ -23,6 +23,13 @@ public:
   DistributedArray(std::unique_ptr<DistributionStrategy> strategy, kamping::Communicator<> const &comm)
       : _strategy(std::move(strategy)), _comm(comm), _rank(comm.rank()), _num_ranks(comm.size()), _local_data(strategy->local_size(_rank), T{}) {}
 
+  void initialize_local(std::vector<T> elements, int rank) {
+    if (_local_data.size() != elements.size()) {
+      throw std::logic_error("Mismatch between expected _local_data and input data size");
+    }
+    _local_data = std::move(elements);
+  }
+
   void set(size_t global_index, T value) {
     int owner = _strategy->owner(global_index);
     // Data is local
@@ -37,7 +44,7 @@ public:
 
   T get(size_t global_index) const {
     if (_rank != _strategy->owner(global_index)) {
-      throw std::out_of_range("Accessed global_index is not present in local data.");
+      throw std::out_of_range("Accessed global_index " + std::to_string(global_index) + " is not present in local data of PE " + std::to_string(_comm.rank()) + ".");
     }
     size_t local_index = _strategy->to_local_index(_rank, global_index);
     return _local_data[local_index];
@@ -91,6 +98,14 @@ public:
     std::cout<< "PE: " << _rank << ": ";
     for (auto const& x: _local_data) {
       std::cout << x << ' ';
+    }
+    std::cout << '\n';
+  }
+
+  void print_local_vertex() const {
+    std::cout<< "PE: " << _rank << ": ";
+    for (auto const& x: _local_data) {
+      std::cout << x.edge_start_index << ',' << x.edge_end_index << ' ';
     }
     std::cout << '\n';
   }
