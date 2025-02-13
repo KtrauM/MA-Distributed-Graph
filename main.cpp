@@ -208,9 +208,9 @@ int main(int argc, char** argv) {
     // TODO: add options to specify graphs from command line
 
     bfs.run();
-    for (const auto& vertex_distance : bfs.getDistances()) {
-        std::cout << "Vertex: " << vertex_distance.first << ", Distance: " << vertex_distance.second << std::endl;
-    }
+    // for (const auto& vertex_distance : bfs.getDistances()) {
+    //     std::cout << "Vertex: " << vertex_distance.first << ", Distance: " << vertex_distance.second << std::endl;
+    // }
     
     return 0;
 }

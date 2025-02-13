@@ -3,10 +3,11 @@
 #include <unordered_set>
 
 #include "distributed_array.hpp"
+#include "distributed_set.hpp"
 
-template <typename T> class DistributedFrontier {
+template <typename T> class TraditionalDistributedFrontier {
 public:
-  DistributedFrontier(std::shared_ptr<DistributionStrategy> strategy, kamping::Communicator<> comm, std::vector<T> initial_frontier)
+  TraditionalDistributedFrontier(std::shared_ptr<DistributionStrategy> strategy, kamping::Communicator<> comm, std::vector<T> initial_frontier)
       : _strategy(std::move(strategy)), _comm(comm) {
     add_multiple(initial_frontier);
   }
@@ -47,21 +48,19 @@ public:
     _local_frontier.insert(recv_buffer.begin(), recv_buffer.end());
     _outgoing_data.clear();
 
-    for (const auto& element : _visited) {
+    for (const auto &element : _visited) {
       _local_frontier.erase(element);
     }
 
     _current_step += 1;
-    for (auto const &x:_local_frontier) {
+    for (auto const &x : _local_frontier) {
       _visited.insert(x);
       _distances[x] = _current_step;
     }
-
   }
 
   const std::unordered_set<T> &local_frontier() const { return _local_frontier; }
   const std::unordered_map<T, uint64_t> &distances() const { return _distances; }
-
 
 private:
   std::shared_ptr<DistributionStrategy> _strategy;
@@ -72,6 +71,27 @@ private:
   std::unordered_set<T> _visited;
   std::unordered_map<T, uint64_t> _distances;
   uint64_t _current_step = 0;
+};
+
+// Wrapper class for DistributedSet
+template <typename T> class SetBasedDistributedFrontier {
+public:
+  SetBasedDistributedFrontier(std::shared_ptr<DistributionStrategy> strategy, kamping::Communicator<> comm, std::vector<T> initial_frontier)
+      : _distributed_set(distributed::DistributedSet<size_t>(strategy, comm)) {
+    _distributed_set.insert(initial_frontier);
+  }
+
+  void add(T element) { _distributed_set.insert(element); }
+
+  void exchange() { _distributed_set.exchange(); }
+
+  const std::vector<T> &local_frontier() {
+    _distributed_set.deduplicate();
+    return _distributed_set.local_data();
+  }
+
+private:
+  distributed::DistributedSet<T> _distributed_set;
 };
 
 struct VertexEdgeMapping {
@@ -93,7 +113,7 @@ struct DistributedCSRGraph {
 class DistributedBFS {
 public:
   DistributedBFS(std::unique_ptr<DistributedCSRGraph> graph, kamping::Communicator<> const &comm, std::vector<size_t> source_vertices)
-      : _graph(std::move(graph)), _comm(comm), _frontier(DistributedFrontier(graph->vertex_dist, _comm, source_vertices)) {}
+      : _graph(std::move(graph)), _comm(comm), _frontier(SetBasedDistributedFrontier<size_t>(graph->vertex_dist, _comm, source_vertices)) {}
 
   void run() {
     auto current_frontier = _frontier.local_frontier(); // contains ids of vertices
@@ -121,7 +141,7 @@ public:
       current_frontier = _frontier.local_frontier();
 
       std::cout << "Current frontier in PE " << _comm.rank() << '\n';
-      for (auto const &x: current_frontier) {
+      for (auto const &x : current_frontier) {
         std::cout << x << ", ";
       }
       std::cout << '\n';
@@ -132,13 +152,11 @@ public:
     }
   }
 
-  std::unordered_map<size_t, uint64_t> getDistances() {
-    return _frontier.distances();
-  }
+  // std::unordered_map<size_t, uint64_t> getDistances() { return _frontier.distances(); }
 
 private:
   kamping::Communicator<> _comm;
   std::unordered_set<size_t> _visited;
-  DistributedFrontier<size_t> _frontier;
+  SetBasedDistributedFrontier<size_t> _frontier;
   std::unique_ptr<DistributedCSRGraph> _graph;
 };
