@@ -73,25 +73,40 @@ private:
   uint64_t _current_step = 0;
 };
 
-// Wrapper class for DistributedSet
 template <typename T> class SetBasedDistributedFrontier {
 public:
-  SetBasedDistributedFrontier(std::shared_ptr<DistributionStrategy> strategy, kamping::Communicator<> comm, std::vector<T> initial_frontier)
-      : _distributed_set(distributed::DistributedSet<size_t>(strategy, comm)) {
-    _distributed_set.insert(initial_frontier);
+  // TODO: replace size_t with VertexId type for readability
+  SetBasedDistributedFrontier(kamping::Communicator<> comm, std::vector<T> initial_frontier)
+      : _local_frontier(distributed::DistributedSet<size_t>(comm)), _visited(distributed::DistributedSet<size_t>(comm)) {
+    if (comm.rank() == 0) {
+      _local_frontier.insert(initial_frontier);
+    }
   }
 
-  void add(T element) { _distributed_set.insert(element); }
+  void add(T element) { _local_frontier.insert(element); }
 
-  void exchange() { _distributed_set.exchange(); }
+  void exchange(std::function<int(const size_t)> mapping) { 
+    _local_frontier.redistribute(mapping); 
+    ++_current_step;
+  }
 
   const std::vector<T> &local_frontier() {
-    _distributed_set.deduplicate();
-    return _distributed_set.local_data();
+    _local_frontier.deduplicate();
+    _local_frontier.filter([this](const T &element) { return _visited.contains(element); } );
+    _visited.insert(_local_frontier);
+    for (const auto &vertex_id: _local_frontier.local_data()) {
+      _distances[vertex_id] = _current_step;
+    }
+    return _local_frontier.local_data();
   }
+  
+  const std::unordered_map<T, uint64_t> &distances() const { return _distances; }
 
 private:
-  distributed::DistributedSet<T> _distributed_set;
+  distributed::DistributedSet<T> _local_frontier;
+  distributed::DistributedSet<T> _visited;
+  std::unordered_map<T, uint64_t> _distances;
+  uint64_t _current_step = 0;
 };
 
 struct VertexEdgeMapping {
@@ -113,16 +128,18 @@ struct DistributedCSRGraph {
 class DistributedBFS {
 public:
   DistributedBFS(std::unique_ptr<DistributedCSRGraph> graph, kamping::Communicator<> const &comm, std::vector<size_t> source_vertices)
-      : _graph(std::move(graph)), _comm(comm), _frontier(SetBasedDistributedFrontier<size_t>(graph->vertex_dist, _comm, source_vertices)) {}
+      : _graph(std::move(graph)), _comm(comm), _frontier(SetBasedDistributedFrontier<size_t>(_comm, source_vertices)) {}
 
   void run() {
     auto current_frontier = _frontier.local_frontier(); // contains ids of vertices
     bool local_active = !current_frontier.empty();
     bool global_active = true;
-
     while (global_active) {
-      std::vector<size_t> next_frontier_local;
-      std::unordered_map<int, std::vector<size_t>> next_frontier_outgoing;
+      // std::cout << "Current frontier in PE before exchange" << _comm.rank() << '\n';
+      // for (auto const &x : current_frontier) {
+      //   std::cout << x << ", ";
+      // }
+      // std::cout << '\n';
 
       for (size_t vertex : current_frontier) {
         if (_graph->vertex_dist->owner(vertex) != _comm.rank()) {
@@ -137,14 +154,15 @@ public:
           _frontier.add(neighbor);
         }
       }
-      _frontier.exchange();
+
+      _frontier.exchange([this](const size_t vertex_id) { return _graph->vertex_dist->owner(vertex_id); });
       current_frontier = _frontier.local_frontier();
 
-      std::cout << "Current frontier in PE " << _comm.rank() << '\n';
-      for (auto const &x : current_frontier) {
-        std::cout << x << ", ";
-      }
-      std::cout << '\n';
+      // std::cout << "Current frontier in PE after exchange" << _comm.rank() << '\n';
+      // for (auto const &x : current_frontier) {
+      //   std::cout << x << ", ";
+      // }
+      // std::cout << '\n';
 
       local_active = !current_frontier.empty();
       global_active = _comm.allreduce_single(kamping::send_buf(local_active), kamping::op(kamping::ops::logical_or<>{}));
@@ -152,7 +170,7 @@ public:
     }
   }
 
-  // std::unordered_map<size_t, uint64_t> getDistances() { return _frontier.distances(); }
+  std::unordered_map<size_t, uint64_t> getDistances() { return _frontier.distances(); }
 
 private:
   kamping::Communicator<> _comm;
