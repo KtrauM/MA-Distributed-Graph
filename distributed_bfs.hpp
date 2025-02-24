@@ -153,7 +153,6 @@ public:
 
       local_active = !current_frontier.empty();
       global_active = _comm.allreduce_single(kamping::send_buf(local_active), kamping::op(kamping::ops::logical_or<>{}));
-      std::cout << "Global active " << global_active << '\n';
     }
   }
 

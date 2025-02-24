@@ -6,15 +6,15 @@
 #include <kamping/collectives/allreduce.hpp>
 #include <kamping/collectives/alltoall.hpp>
 #include <kamping/collectives/reduce.hpp>
+#include <kamping/communicator.hpp>
 #include <kamping/measurements/printer.hpp>
 #include <kamping/measurements/timer.hpp>
-#include <kamping/communicator.hpp>
 #include <memory>
 #include <vector>
 
+#include "CLI11.hpp"
 #include <iostream>
 #include <mpi.h>
-#include "CLI11.hpp"
 
 void PrintGraphAttributes(const kagen::Graph &graph) {
   int rank;
@@ -92,7 +92,7 @@ void SetupCommandLineArguments(CLI::App &app, std::string &generator_options, st
 int main(int argc, char **argv) {
   kamping::Environment env(argc, argv);
   auto comm = kamping::comm_world();
-  
+
   // Setup CLI args
   CLI::App app{"Distributed BFS Benchmark"};
   std::string generator_options;
@@ -104,34 +104,34 @@ int main(int argc, char **argv) {
   // BFS example
   kagen::KaGen gen(MPI_COMM_WORLD);
   gen.UseCSRRepresentation();
-  std::cout << "GEN OPTIONS: " << generator_options << " " << print_graph << '\n';
+
   kamping::measurements::timer().synchronize_and_start("kagen_gen");
   auto kagen_graph = gen.GenerateFromOptionString(generator_options);
   if (print_graph) {
     PrintGraphAttributes(kagen_graph);
   }
   kamping::measurements::timer().stop();
-  
+
   // Setup edge array
   kamping::measurements::timer().synchronize_and_start("build_edge_array");
   std::vector<size_t> edge_dist(comm.size() + 1);
   std::vector<size_t> adjncy_sizes(comm.size());
   comm.allgather(kamping::send_buf(kagen_graph.adjncy.size()), kamping::recv_buf(adjncy_sizes));
-  
+
   for (size_t i = 1; i < edge_dist.size(); ++i) {
     edge_dist[i] = edge_dist[i - 1] + adjncy_sizes[i - 1];
   }
-  
+
   BlockDistribution edge_strategy = BlockDistribution(edge_dist);
   distributed::DistributedArray<size_t> edge_array = distributed::DistributedArray<size_t>(std::make_unique<BlockDistribution>(edge_strategy), comm);
   std::vector<size_t> recasted_edge_ids(kagen_graph.adjncy.size());
   for (size_t i = 0; i < recasted_edge_ids.size(); ++i) {
     recasted_edge_ids[i] = (size_t)kagen_graph.adjncy[i];
   }
-  
+
   edge_array.initialize_local(recasted_edge_ids, comm.rank());
   kamping::measurements::timer().stop();
-  
+
   // Setup vertex array
   kamping::measurements::timer().synchronize_and_start("build_vertex_array");
   std::vector<size_t> vertex_dist(comm.size() + 1);
@@ -159,9 +159,5 @@ int main(int argc, char **argv) {
   bfs.run();
   kamping::measurements::timer().stop();
   kamping::measurements::timer().aggregate_and_print(kamping::measurements::SimpleJsonPrinter<>{std::cout});
-  // for (const auto &vertex_distance : bfs.getDistances()) {
-  //   std::cout << "Vertex: " << vertex_distance.first << ", Distance: " << vertex_distance.second << std::endl;
-  // }
-
   return 0;
 }
