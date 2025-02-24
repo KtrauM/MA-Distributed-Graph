@@ -1,6 +1,5 @@
 #pragma once
 
-#include "distribution_strategy.hpp"
 #include <algorithm>
 #include <cassert>
 #include <kamping/collectives/alltoall.hpp>
@@ -10,77 +9,117 @@
 #include <stdexcept>
 #include <unordered_map>
 #include <vector>
+#include <functional>
 
 namespace distributed {
 
 template <typename T> class DistributedSet {
 public:
-  DistributedSet(std::shared_ptr<DistributionStrategy> strategy, kamping::Communicator<> const &comm)
-      : _strategy(std::move(strategy)), _comm(comm), _rank(comm.rank()), _num_ranks(comm.size()), _local_data(strategy->local_size(_rank), T{}) {}
+  DistributedSet(kamping::Communicator<> const &comm)
+      : _comm(comm), _rank(comm.rank()), _num_ranks(comm.size()) {}
 
   void insert(T element) {
-    int owner = _strategy->owner(element);
-    if (owner == _rank) {
-      auto pos = std::lower_bound(_local_data.begin(), _local_data.end(), element);
-      _local_data.insert(pos, element);
-      return;
-    }
-    _outgoing_data[owner].push_back(element);
+    _local_data.push_back(element);
   }
-
+  
   void insert(std::vector<T> elements) {
-    _local_data.reserve(_local_data.size() + elements.size());
-    for (const auto &element : elements) {
-      insert(element);
+    _local_data.insert(_local_data.end(), elements.begin(), elements.end());
+  }
+  
+  void insert(const distributed::DistributedSet<T> &other_set) {
+    insert(other_set.local_data());
+  }
+  
+  void remove(T element) {
+    auto pos = std::find(_local_data.begin(), _local_data.end(), element);
+    if (pos != _local_data.end()) {
+      _local_data.erase(pos);
     }
   }
 
-  void insert_immediate(T element) {
-    int owner = _strategy->owner(element);
-    if (owner == _rank) {
-      insert(element);
-      return;
-    }
-    // TODO: point to point using Isend but when to Irecv?
-    throw std::logic_error("insert_immediate is not implemented yet!");
+  bool contains(T element) {
+    auto pos = std::find(_local_data.begin(), _local_data.end(), element);
+    return pos != _local_data.end();
   }
 
   void deduplicate() {
+    std::sort(_local_data.begin(), _local_data.end());
     auto last = std::unique(_local_data.begin(), _local_data.end());
     _local_data.erase(last, _local_data.end());
   }
 
-  void exchange() {
-    std::vector<int> send_counts(_num_ranks, 0);
-    std::vector<T> send_buffer;
-    std::vector<T> recv_buffer;
 
-    for (int rank = 0; rank < _num_ranks; ++rank) {
-      const auto &updates = _outgoing_data[rank];
-      send_counts[rank] = updates.size();
-      send_buffer.insert(send_buffer.end(), updates.begin(), updates.end());
-    }
-
-    _comm.alltoallv(kamping::send_buf(send_buffer), kamping::send_counts(send_counts),
-                    kamping::recv_buf<kamping::BufferResizePolicy::grow_only>(recv_buffer));
-
-    std::vector<T> merged(_local_data.size() + recv_buffer.size());
-    std::sort(recv_buffer.begin(), recv_buffer.end());
-    std::merge(_local_data.begin(), _local_data.end(), recv_buffer.begin(), recv_buffer.end(), merged.begin());
-    _local_data = std::move(merged);
-
-    _outgoing_data.clear();
+  void filter(std::function<bool(const T&)> func) {
+    auto last = std::remove_if(_local_data.begin(), _local_data.end(), func);
+    _local_data.erase(last, _local_data.end());
   }
 
+  void redistribute(std::function<int(const T&)> mapping) {
+    std::unordered_map<int, std::vector<T>> outgoing_data;
+    for (const T &element: _local_data) {
+      int target = mapping(element);
+      outgoing_data[target].push_back(element);
+    }
+
+    std::vector<int> send_counts(_num_ranks, 0);
+    std::vector<T> send_buffer;
+
+    for (int rank = 0; rank < _num_ranks; ++rank) {
+      send_counts[rank] = outgoing_data[rank].size();
+      send_buffer.insert(send_buffer.end(), outgoing_data[rank].begin(), outgoing_data[rank].end());
+    }
+
+    _local_data.clear();
+    _comm.alltoallv(kamping::send_buf(send_buffer), kamping::send_counts(send_counts), kamping::recv_buf<kamping::BufferResizePolicy::resize_to_fit>(_local_data));
+  }
+ 
   const std::vector<T> &local_data() const { return _local_data; }
 
-private:
+protected:
   int _rank;
   int _num_ranks;
-  std::vector<T> _local_data; // always sorted
-  std::unordered_map<int, std::vector<T>> _outgoing_data;
-  std::shared_ptr<DistributionStrategy> _strategy;
+  std::vector<T> _local_data;
   kamping::Communicator<> _comm;
 };
 
+
+// Invariant: _local_data is always sorted.
+template <typename T> class SortedDistributedSet : public DistributedSet<T> {
+  public:
+    using DistributedSet<T>::DistributedSet;
+    using DistributedSet<T>::_local_data;
+
+    void insert(T element) {
+      auto pos = std::lower_bound(_local_data.begin(), _local_data.end(), element);
+      _local_data.insert(pos, element);
+    }
+
+    void insert(std::vector<T> elements) {
+      std::sort(elements.begin(), elements.end());
+      for (const T &element: elements) {
+        insert(element);
+      }
+    }
+
+    void insert(const distributed::DistributedSet<T> &other_set) {
+      insert(other_set.local_data);
+    }
+
+    void remove(T element) {
+      auto pos = std::lower_bound(_local_data.begin(), _local_data.end(), element);
+      if (pos != _local_data.end() && *pos == element) {
+        _local_data.erase(pos);
+      }
+    }
+
+    bool contains(T element) {
+      auto pos = std::lower_bound(_local_data.begin(), _local_data.end(), element);
+      return pos != _local_data.end() && *pos == element;
+    }
+  
+    void deduplicate() {
+      auto last = std::unique(_local_data.begin(), _local_data.end());
+      _local_data.erase(last, _local_data.end());
+    }
+};
 } // namespace distributed
