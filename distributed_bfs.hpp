@@ -85,21 +85,21 @@ public:
 
   void add(T element) { _local_frontier.insert(element); }
 
-  void exchange(std::function<int(const size_t)> mapping) { 
-    _local_frontier.redistribute(mapping); 
+  void exchange(std::function<int(const size_t)> mapping) {
+    _local_frontier.redistribute(mapping);
     ++_current_step;
   }
 
   const std::vector<T> &local_frontier() {
     _local_frontier.deduplicate();
-    _local_frontier.filter([this](const T &element) { return _visited.contains(element); } );
+    _local_frontier.filter([this](const T &element) { return _visited.contains(element); });
     _visited.insert(_local_frontier);
-    for (const auto &vertex_id: _local_frontier.local_data()) {
+    for (const auto &vertex_id : _local_frontier.local_data()) {
       _distances[vertex_id] = _current_step;
     }
     return _local_frontier.local_data();
   }
-  
+
   const std::unordered_map<T, uint64_t> &distances() const { return _distances; }
 
 private:
@@ -135,12 +135,6 @@ public:
     bool local_active = !current_frontier.empty();
     bool global_active = true;
     while (global_active) {
-      // std::cout << "Current frontier in PE before exchange" << _comm.rank() << '\n';
-      // for (auto const &x : current_frontier) {
-      //   std::cout << x << ", ";
-      // }
-      // std::cout << '\n';
-
       for (size_t vertex : current_frontier) {
         if (_graph->vertex_dist->owner(vertex) != _comm.rank()) {
           throw std::logic_error("Vertex " + std::to_string(vertex) + " belongs to another worker: " +
@@ -148,7 +142,6 @@ public:
         }
 
         auto [edge_index_start, edge_index_end] = _graph->vertex_array.get(vertex);
-
         for (size_t i = edge_index_start; i < edge_index_end; ++i) {
           size_t neighbor = _graph->edge_array.get(i);
           _frontier.add(neighbor);
@@ -157,12 +150,6 @@ public:
 
       _frontier.exchange([this](const size_t vertex_id) { return _graph->vertex_dist->owner(vertex_id); });
       current_frontier = _frontier.local_frontier();
-
-      // std::cout << "Current frontier in PE after exchange" << _comm.rank() << '\n';
-      // for (auto const &x : current_frontier) {
-      //   std::cout << x << ", ";
-      // }
-      // std::cout << '\n';
 
       local_active = !current_frontier.empty();
       global_active = _comm.allreduce_single(kamping::send_buf(local_active), kamping::op(kamping::ops::logical_or<>{}));
