@@ -154,7 +154,9 @@ int main(int argc, char **argv) {
   DistributedCSRGraph graph =
       DistributedCSRGraph(std::move(vertex_array), std::move(edge_array), std::make_shared<BlockDistribution>(vertex_strategy));
   DistributedBFS bfs = DistributedBFS(std::make_unique<DistributedCSRGraph>(std::move(graph)), comm, bfs_start_vertices);
-
+  kamping::measurements::timer().stop();
+  
+  // Run bfs
   kamping::measurements::timer().synchronize_and_start("run_bfs");
   bfs.run();
   kamping::measurements::timer().stop();
