@@ -1,18 +1,16 @@
-#include "distributed_array.hpp"
-#include "distributed_bfs.hpp"
-#include "distribution_strategy.hpp"
+#include "algorithms/distributed/bfs.hpp"
+#include "primitives/distribution_strategy.hpp"
+#include "primitives/distributed_array.hpp"
 #include <kagen.h>
 #include <kamping/collectives/allgather.hpp>
-#include <kamping/collectives/allreduce.hpp>
 #include <kamping/collectives/alltoall.hpp>
-#include <kamping/collectives/reduce.hpp>
 #include <kamping/communicator.hpp>
 #include <kamping/measurements/printer.hpp>
 #include <kamping/measurements/timer.hpp>
 #include <memory>
 #include <vector>
 
-#include "CLI11.hpp"
+#include "include/CLI11.hpp"
 #include <iostream>
 #include <mpi.h>
 
@@ -123,7 +121,7 @@ int main(int argc, char **argv) {
   }
 
   BlockDistribution edge_strategy = BlockDistribution(edge_dist);
-  distributed::DistributedArray<size_t> edge_array = distributed::DistributedArray<size_t>(std::make_unique<BlockDistribution>(edge_strategy), comm);
+  distributed::DistributedArray<size_t> edge_array = distributed::DistributedArray<size_t>(std::make_shared<BlockDistribution>(edge_strategy), comm);
   std::vector<size_t> recasted_edge_ids(kagen_graph.adjncy.size());
   for (size_t i = 0; i < recasted_edge_ids.size(); ++i) {
     recasted_edge_ids[i] = (size_t)kagen_graph.adjncy[i];
@@ -140,7 +138,7 @@ int main(int argc, char **argv) {
 
   BlockDistribution vertex_strategy = BlockDistribution(vertex_dist);
   distributed::DistributedArray<VertexEdgeMapping> vertex_array =
-      distributed::DistributedArray<VertexEdgeMapping>(std::make_unique<BlockDistribution>(vertex_strategy), comm);
+      distributed::DistributedArray<VertexEdgeMapping>(std::make_shared<BlockDistribution>(vertex_strategy), comm);
 
   std::vector<VertexEdgeMapping> local_vertex_array;
   for (size_t i = 0; i < kagen_graph.xadj.size() - 1; ++i) {
@@ -153,7 +151,7 @@ int main(int argc, char **argv) {
   kamping::measurements::timer().synchronize_and_start("build_csr_graph");
   DistributedCSRGraph graph =
       DistributedCSRGraph(std::move(vertex_array), std::move(edge_array), std::make_shared<BlockDistribution>(vertex_strategy));
-  DistributedBFS bfs = DistributedBFS(std::make_unique<DistributedCSRGraph>(std::move(graph)), comm, bfs_start_vertices);
+  DistributedBFS bfs = DistributedBFS(std::make_shared<DistributedCSRGraph>(std::move(graph)), comm, bfs_start_vertices);
   kamping::measurements::timer().stop();
   
   // Run bfs

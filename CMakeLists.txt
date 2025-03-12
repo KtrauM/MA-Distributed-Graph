@@ -24,6 +24,10 @@ FetchContent_Declare(KaGen
 FetchContent_MakeAvailable(KaGen)
 # set_property(DIRECTORY "${KaGen_SOURCE_DIR}" PROPERTY EXCLUDE_FROM_ALL YES) # optional
 
-add_executable(myapp distribution_strategy.hpp distributed_array.hpp main.cpp)
+add_executable(myapp primitives/distribution_strategy.hpp primitives/distributed_array.hpp main.cpp
+        algorithms/distributed/bfs.hpp
+        algorithms/distributed/page_rank.hpp
+        algorithms/distributed/connected_component.hpp
+        algorithms/distributed/label_propogation.hpp)
 target_link_libraries(myapp PRIVATE kamping::kamping)
 target_link_libraries(myapp PUBLIC KaGen::KaGen)

@@ -2,7 +2,6 @@
 
 #include "distribution_strategy.hpp"
 #include <algorithm>
-#include <cassert>
 #include <kamping/collectives/alltoall.hpp>
 #include <kamping/collectives/gather.hpp>
 #include <kamping/communicator.hpp>
@@ -16,11 +15,15 @@ namespace distributed {
 template <typename T> struct ArrayUpdate {
   size_t global_index;
   T value;
+  std::function<T (T x, T y)> operation;
+
+  ArrayUpdate(size_t global_index, T value) : global_index(global_index), value(value), operation([](T x, T y) { return y; }) {}
+  ArrayUpdate(size_t global_index, T value, std::function<T (T x, T y)> operation) : global_index(global_index), value(value), operation(operation) {}
 };
 
 template <typename T> class DistributedArray {
 public:
-  DistributedArray(std::unique_ptr<DistributionStrategy> strategy, kamping::Communicator<> const &comm)
+  DistributedArray(std::shared_ptr<DistributionStrategy> strategy, kamping::Communicator<> const &comm)
       : _strategy(std::move(strategy)), _comm(comm), _rank(comm.rank()), _num_ranks(comm.size()), _local_data(strategy->local_size(_rank), T{}) {}
 
   void initialize_local(std::vector<T> elements, int rank) {
@@ -40,6 +43,18 @@ public:
     }
     // Data is non-local
     _outgoing_data[owner].push_back({global_index, value});
+  }
+
+  void set(size_t global_index, T value, std::function<T (T x, T y)> operation) {
+    int owner = _strategy->owner(global_index);
+    // Data is local
+    if (owner == _rank) {
+      size_t local_index = _strategy->to_local_index(_rank, global_index);
+      _local_data[local_index] = operation(_local_data[local_index], value);
+      return;
+    }
+    // Data is non-local
+    _outgoing_data[owner].push_back({global_index, value, operation});
   }
 
   T get(size_t global_index) const {
@@ -65,7 +80,7 @@ public:
 
     for (const auto &update : recv_buffer) {
       size_t local_index = _strategy->to_local_index(_rank, update.global_index);
-      _local_data[local_index] = update.value;
+      _local_data[local_index] = update.operation(_local_data[local_index], update.value);
     }
 
     _outgoing_data.clear();
@@ -115,7 +130,7 @@ private:
   int _num_ranks;
   std::vector<T> _local_data;
   std::unordered_map<int, std::vector<ArrayUpdate<T>>> _outgoing_data;
-  std::unique_ptr<DistributionStrategy> _strategy;
+  std::shared_ptr<DistributionStrategy> _strategy;
   kamping::Communicator<> _comm;
 };
 

@@ -2,8 +2,8 @@
 #SBATCH --job-name=dist_graph          # Name of the job
 #SBATCH --output=output_%j.log         # Output file (with job ID in the name)
 #SBATCH --error=error_%j.log           # Error file (with job ID in the name)
-#SBATCH --ntasks=1                     # Number of tasks (processes)
-#SBATCH --cpus-per-task=4              # Number of CPU cores per task
+#SBATCH --ntasks=64                    # Number of tasks (processes)
+#SBATCH --cpus-per-task=1              # Number of CPU cores per task
 #SBATCH --mem=8G                       # Memory required per node
 #SBATCH --time=01:00:00                # Wall clock time limit (hh:mm:ss)
 #SBATCH --partition=naur               # Partition (queue) to use
