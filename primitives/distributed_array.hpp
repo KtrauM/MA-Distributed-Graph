@@ -45,7 +45,7 @@ public:
     _outgoing_data[owner].push_back({global_index, value});
   }
 
-  void set(size_t global_index, T value, std::function<T (T x, T y)> operation) {
+  void set(size_t global_index, T value, std::function<T (T, T)> operation) {
     int owner = _strategy->owner(global_index);
     // Data is local
     if (owner == _rank) {
@@ -108,6 +108,8 @@ public:
 
     return global_array;
   }
+
+  std::vector<T> &local_data() { return _local_data; }
 
   void print_local() const {
     std::cout<< "PE: " << _rank << ": ";
