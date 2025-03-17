@@ -34,3 +34,5 @@
 # Directories
 build/
 .vscode/
+.idea/
+benchmark_results/
