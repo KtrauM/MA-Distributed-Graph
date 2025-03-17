@@ -1,4 +1,5 @@
 #include "algorithms/distributed/bfs.hpp"
+#include "algorithms/distributed/connected_component.hpp"
 #include "primitives/distribution_strategy.hpp"
 #include "primitives/distributed_array.hpp"
 #include <kagen.h>
@@ -77,39 +78,51 @@ void PrintGraphAttributes(const kagen::Graph &graph) {
   std::cout << "[PE " << rank << "] Number of Global Edges: " << graph.NumberOfGlobalEdges() << "\n";
 }
 
-void SetupCommandLineArguments(CLI::App &app, std::string &generator_options, std::vector<size_t> &bfs_start_vertices, bool &print_graph) {
-  app.add_option("-g,--generator", generator_options, "Graph generator options string (e.g., 'grid2d;grid_x=32;grid_y=12')")->required();
+void SetupCommandLineArguments(CLI::App &app, std::string &generator_options, 
+                             std::vector<size_t> &bfs_start_vertices, 
+                             bool &print_graph,
+                             std::string &algorithm) {
+  app.add_option("-g,--generator", generator_options, 
+                 "Graph generator options string (e.g., 'grid2d;grid_x=32;grid_y=12')")
+     ->required();
 
   app.add_option("-s,--start", bfs_start_vertices, "BFS starting vertices (comma-separated list)")
-      ->delimiter(',')
-      ->default_val(std::vector<size_t>{0});
+     ->delimiter(',')
+     ->default_val(std::vector<size_t>{0});
 
   app.add_flag("-p,--print-graph", print_graph, "Print detailed graph attributes");
+  
+  app.add_option("-a,--algorithm", algorithm, 
+                 "Algorithm to run (bfs or cc)")
+     ->default_val("bfs");
 }
 
 int main(int argc, char **argv) {
   kamping::Environment env(argc, argv);
   auto comm = kamping::comm_world();
+  std::cout << "Starting graph generation" << std::endl;
 
   // Setup CLI args
-  CLI::App app{"Distributed BFS Benchmark"};
+  CLI::App app{"Distributed Graph Algorithms Benchmark"};
   std::string generator_options;
   std::vector<size_t> bfs_start_vertices;
   bool print_graph = false;
-  SetupCommandLineArguments(app, generator_options, bfs_start_vertices, print_graph);
+  std::string algorithm;
+  SetupCommandLineArguments(app, generator_options, bfs_start_vertices, print_graph, algorithm);
   CLI11_PARSE(app, argc, argv);
 
   // BFS example
   kagen::KaGen gen(MPI_COMM_WORLD);
   gen.UseCSRRepresentation();
 
+  std::cout << "Generating graph" << std::endl;
   kamping::measurements::timer().synchronize_and_start("kagen_gen");
   auto kagen_graph = gen.GenerateFromOptionString(generator_options);
   if (print_graph) {
     PrintGraphAttributes(kagen_graph);
   }
   kamping::measurements::timer().stop();
-
+  std::cout << "Done generating graph" << std::endl;
   // Setup edge array
   kamping::measurements::timer().synchronize_and_start("build_edge_array");
   std::vector<size_t> edge_dist(comm.size() + 1);
@@ -150,14 +163,33 @@ int main(int argc, char **argv) {
   // Build graph
   kamping::measurements::timer().synchronize_and_start("build_csr_graph");
   DistributedCSRGraph graph =
-      DistributedCSRGraph(std::move(vertex_array), std::move(edge_array), std::make_shared<BlockDistribution>(vertex_strategy));
-  DistributedBFS bfs = DistributedBFS(std::make_shared<DistributedCSRGraph>(std::move(graph)), comm, bfs_start_vertices);
-  kamping::measurements::timer().stop();
+      DistributedCSRGraph(std::move(vertex_array), std::move(edge_array), 
+                         std::make_shared<BlockDistribution>(vertex_strategy));
   
-  // Run bfs
-  kamping::measurements::timer().synchronize_and_start("run_bfs");
-  bfs.run();
-  kamping::measurements::timer().stop();
+  // Run selected algorithm
+  if (algorithm == "bfs") {
+    DistributedBFS bfs = DistributedBFS(std::make_shared<DistributedCSRGraph>(std::move(graph)), 
+                                       comm, bfs_start_vertices);
+    kamping::measurements::timer().stop();
+    
+    kamping::measurements::timer().synchronize_and_start("run_bfs");
+    bfs.run();
+    kamping::measurements::timer().stop();
+  } else if (algorithm == "cc") {
+    std::cout << "Defining connected component computation" << std::endl;
+    BFSBasedDistributedConnectedComponent cc = 
+        BFSBasedDistributedConnectedComponent(std::make_shared<DistributedCSRGraph>(std::move(graph)), comm);
+    kamping::measurements::timer().stop();
+    std::cout << "Starting connected component computation" << std::endl;
+    kamping::measurements::timer().synchronize_and_start("run_cc");
+    uint32_t num_components = cc.run();
+    std::cout << "Number of connected components: " << num_components << std::endl;
+    kamping::measurements::timer().stop();
+  } else {
+    std::cerr << "Unknown algorithm: " << algorithm << std::endl;
+    return 1;
+  }
+
   kamping::measurements::timer().aggregate_and_print(kamping::measurements::SimpleJsonPrinter<>{std::cout});
   return 0;
 }
