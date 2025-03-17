@@ -1,6 +1,6 @@
 #pragma once
 
-#include "algorithms/common/graph.hpp"
+#include "../common/graph.hpp"
 #include <vector>
 
 class BFS {

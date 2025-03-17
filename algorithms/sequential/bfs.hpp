@@ -1,7 +1,6 @@
 #pragma once
 
-#include "algorithms/common/graph.hpp"
-#include "algorithms/common/bfs.hpp"
+#include "../common/bfs.hpp"
 #include <vector>
 #include <unordered_set>
 
@@ -34,7 +33,7 @@ class SequentialBFS : public BFS {
     }
 
     private:
-    std::vector<VectorId> _start_nodes;
-    std::unordered_set<VectorId> _visited;
+    std::vector<VertexId> _start_nodes;
+    std::unordered_set<VertexId> _visited;
     CSRGraph _graph;
-}
+};
