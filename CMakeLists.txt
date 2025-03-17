@@ -27,7 +27,6 @@ FetchContent_MakeAvailable(KaGen)
 add_executable(myapp primitives/distribution_strategy.hpp primitives/distributed_array.hpp main.cpp
         algorithms/distributed/bfs.hpp
         algorithms/distributed/page_rank.hpp
-        algorithms/distributed/connected_component.hpp
-        algorithms/distributed/label_propogation.hpp)
+        algorithms/distributed/connected_component.hpp)
 target_link_libraries(myapp PRIVATE kamping::kamping)
 target_link_libraries(myapp PUBLIC KaGen::KaGen)

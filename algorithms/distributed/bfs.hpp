@@ -28,6 +28,9 @@ public:
     return _local_frontier.local_data();
   }
 
+  const std::vector<VertexId> &visited() const {
+    return _visited.local_data();
+  }
 
 private:
   distributed::DistributedSet<VertexId> _local_frontier;
@@ -38,7 +41,7 @@ private:
 class DistributedBFS {
 public:
   DistributedBFS(std::shared_ptr<DistributedCSRGraph> graph, kamping::Communicator<> const &comm, std::vector<VertexId> source_vertices)
-      : _graph(std::move(graph)), _comm(comm), _frontier(SetBasedDistributedFrontier(_comm, source_vertices)), _distances(graph->vertex_dist, comm) {}
+      : _graph(std::move(graph)), _comm(comm), _frontier(SetBasedDistributedFrontier(_comm, source_vertices)), _distances(_graph->vertex_dist, comm) {}
 
   void run() {
     auto current_frontier = _frontier.local_frontier(); // contains ids of vertices
@@ -46,7 +49,8 @@ public:
     bool global_active = true;
     while (global_active) {
       for (VertexId vertex : current_frontier) {
-        _distances
+        std::function<uint64_t (uint64_t, uint64_t)> minOp = [](uint64_t x, uint64_t y) { return std::min(x, y); };
+        _distances.set(vertex, current_distance, minOp);
         if (_graph->vertex_dist->owner(vertex) != _comm.rank()) {
           throw std::logic_error("Vertex " + std::to_string(vertex) + " belongs to another worker: " +
                                  std::to_string(_graph->vertex_dist->owner(vertex)) + ", but was found in worker " + std::to_string(_comm.rank()));
@@ -70,10 +74,14 @@ public:
 
   const distributed::DistributedArray<uint64_t>& distances() const { return _distances; }
 
+  SetBasedDistributedFrontier &frontier() {
+    return _frontier;
+  }
+
 private:
   kamping::Communicator<> _comm;
   SetBasedDistributedFrontier _frontier;
   std::shared_ptr<DistributedCSRGraph> _graph;
-  const distributed::DistributedArray<uint64_t> _distances;
+  distributed::DistributedArray<uint64_t> _distances;
   uint64_t current_distance = 0;
 };
