@@ -9,6 +9,10 @@ import os
 
 # Graph types to test
 GRAPH_TYPES = [
+    "gnm-undirected",
+    "gnm-directed",
+    "gnp-undirected",
+    "gnp-directed",
     "rgg2d",
     "rgg3d",
     "grid2d",
@@ -29,11 +33,12 @@ def get_processor_list():
         return [1, 2, 4, 8, 16, 32, 64]
     else:
         print("Running locally - limiting processor count to 8")
-        return [1, 4]
+        return [1, 2, 4, 8]
 
 def run_benchmark(num_processors, graph_type):
     """Run the algorithm with specified number of processors and graph type, return runtime."""
-    cmd = f"mpirun -n {num_processors} ./build/myapp -g '{graph_type};n={2**20};m={2**23}'"
+    cmd = f"mpirun -n {num_processors} ./build/myapp -g 'type={graph_type};n={2**(18 + num_processors.bit_length() - 1)};m={2**(21 + num_processors.bit_length() - 1)}'"
+    print(f"Running command: {cmd}"	)
     start_time = time.time()
     subprocess.run(cmd, shell=True, check=True)
     end_time = time.time()
