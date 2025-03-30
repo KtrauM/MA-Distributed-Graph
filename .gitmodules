@@ -10,3 +10,6 @@
 [submodule "baseline_frameworks/havoqgt"]
 	path = baseline_frameworks/havoqgt
 	url = https://github.com/KtrauM/havoqgt
+[submodule "baseline_frameworks/CombBLAS"]
+	path = baseline_frameworks/CombBLAS
+	url = https://github.com/PASSIONLab/CombBLAS.git
