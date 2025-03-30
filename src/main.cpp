@@ -11,7 +11,7 @@
 #include <memory>
 #include <vector>
 
-#include "include/CLI11.hpp"
+#include <CLI/CLI.hpp>
 #include <iostream>
 #include <mpi.h>
 

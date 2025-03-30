@@ -1,0 +1,12 @@
+[submodule "external/KaMPIng"]
+	path = external/KaMPIng
+	url = https://github.com/kamping-site/kamping.git
+[submodule "external/CLI11"]
+	path = external/CLI11
+	url = https://github.com/CLIUtils/CLI11.git
+[submodule "external/KaGen"]
+	path = external/KaGen
+	url = https://github.com/KarlsruheGraphGeneration/KaGen.git
+[submodule "baseline_frameworks/havoqgt"]
+	path = baseline_frameworks/havoqgt
+	url = https://github.com/KtrauM/havoqgt

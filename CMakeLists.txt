@@ -5,28 +5,20 @@ project(DistributedArray)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-# KaMPIng 
-include(FetchContent)
-FetchContent_Declare(
-  kamping
-  GIT_REPOSITORY https://github.com/kamping-site/kamping.git
-  GIT_TAG v0.1.1
-)
+add_subdirectory(external/KaMPIng)
+add_subdirectory(external/KaGen)
+add_subdirectory(external/CLI11)
 
-FetchContent_MakeAvailable(kamping)
+add_executable(distributed_graph_cli src/main.cpp)
+add_executable(run_bfs src/run_bfs.cpp)
+add_executable(run_cc src/run_cc.cpp)
 
-# KaGen
-include(FetchContent)
-FetchContent_Declare(KaGen 
-  GIT_REPOSITORY https://github.com/sebalamm/KaGen.git 
-  GIT_TAG master)
-
-FetchContent_MakeAvailable(KaGen)
-# set_property(DIRECTORY "${KaGen_SOURCE_DIR}" PROPERTY EXCLUDE_FROM_ALL YES) # optional
-
-add_executable(myapp primitives/distribution_strategy.hpp primitives/distributed_array.hpp main.cpp
-        algorithms/distributed/bfs.hpp
-        algorithms/distributed/page_rank.hpp
-        algorithms/distributed/connected_component.hpp)
-target_link_libraries(myapp PRIVATE kamping::kamping)
-target_link_libraries(myapp PUBLIC KaGen::KaGen)
+target_link_libraries(distributed_graph_cli PRIVATE kamping::kamping)
+target_link_libraries(distributed_graph_cli PRIVATE KaGen::KaGen)
+target_link_libraries(distributed_graph_cli PRIVATE CLI11::CLI11)
+target_link_libraries(run_bfs PRIVATE kamping::kamping)
+target_link_libraries(run_bfs PRIVATE KaGen::KaGen)
+target_link_libraries(run_bfs PRIVATE CLI11::CLI11)
+target_link_libraries(run_cc PRIVATE kamping::kamping)
+target_link_libraries(run_cc PRIVATE KaGen::KaGen)
+target_link_libraries(run_cc PRIVATE CLI11::CLI11)    

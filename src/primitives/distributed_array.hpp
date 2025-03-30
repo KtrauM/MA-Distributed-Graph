@@ -27,7 +27,9 @@ public:
       : _strategy(std::move(strategy)), _comm(comm), _rank(comm.rank()), _num_ranks(comm.size()), _local_data(strategy->local_size(_rank), T{}) {}
 
   void initialize_local(std::vector<T> elements, int rank) {
+    // TODO: there is a bug here
     if (_local_data.size() != elements.size()) {
+      std::cout << "PE " << _rank << "/" << _num_ranks << ": local_data.size(): " << _local_data.size() << ", elements.size(): " << elements.size() << std::endl;
       throw std::logic_error("Mismatch between expected _local_data and input data size");
     }
     _local_data = std::move(elements);

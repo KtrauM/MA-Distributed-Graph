@@ -32,3 +32,13 @@ private:
   DistributedBFS _bfs_runner;
   std::shared_ptr<DistributedCSRGraph> _graph;
 };
+
+// class LabelPropagationBasedDistributedConnectedComponent {
+// public:
+//   LabelPropagationBasedDistributedConnectedComponent(std::shared_ptr<DistributedCSRGraph> graph, kamping::Communicator<> const &comm)
+//       : _graph(std::move(graph)), _comm(comm) {}
+
+//   uint32_t run() {
+
+//   }
+// };
