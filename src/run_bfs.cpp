@@ -24,8 +24,6 @@ void SetupCommandLineArguments(CLI::App &app, std::string &generator_options, st
       ->default_val(std::vector<size_t>{0});
 
   app.add_flag("-p,--print-graph", print_graph, "Print detailed graph attributes");
-
-  app.add_option("-a,--algorithm", algorithm, "Algorithm to run (bfs or cc)")->default_val("bfs");
 }
 
 int main(int argc, char **argv) {
