@@ -102,7 +102,7 @@ template <typename T> class SortedDistributedSet : public DistributedSet<T> {
     }
 
     void insert(const distributed::DistributedSet<T> &other_set) {
-      insert(other_set.local_data);
+      insert(other_set.local_data());
     }
 
     void remove(T element) {
@@ -121,5 +121,7 @@ template <typename T> class SortedDistributedSet : public DistributedSet<T> {
       auto last = std::unique(_local_data.begin(), _local_data.end());
       _local_data.erase(last, _local_data.end());
     }
+
+    const std::vector<T> &local_data() const { return _local_data; }
 };
 } // namespace distributed

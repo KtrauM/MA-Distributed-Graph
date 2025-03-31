@@ -1,10 +1,11 @@
 #pragma once
 
 #include <kamping/collectives/allreduce.hpp>
-
+#include <set>
 #include "../../primitives/distributed_array.hpp"
 #include "../../primitives/distributed_set.hpp"
 #include "../common/graph.hpp"
+#include <kamping/measurements/timer.hpp>
 
 class SetBasedDistributedFrontier {
 public:
@@ -22,9 +23,21 @@ public:
   }
 
   const std::vector<VertexId> &local_frontier() {
+    kamping::measurements::timer().synchronize_and_start("local_frontier_deduplicate");
     _local_frontier.deduplicate();
-    _local_frontier.filter([this](const VertexId &vertex) { return _visited.contains(vertex); });
+    kamping::measurements::timer().stop();
+
+    kamping::measurements::timer().synchronize_and_start("local_frontier_filter");
+    const std::set<VertexId> visited_set(
+        _visited.local_data().begin(),
+        _visited.local_data().end());
+    
+    _local_frontier.filter([&visited_set](const VertexId &vertex) { return visited_set.find(vertex) == visited_set.end(); });
+    kamping::measurements::timer().stop();
+
+    kamping::measurements::timer().synchronize_and_start("local_frontier_insert");
     _visited.insert(_local_frontier);
+    kamping::measurements::timer().stop();
     return _local_frontier.local_data();
   }
 
@@ -44,10 +57,13 @@ public:
       : _graph(std::move(graph)), _comm(comm), _frontier(SetBasedDistributedFrontier(_comm, source_vertices)), _distances(_graph->vertex_dist, comm) {}
 
   void run() {
+    kamping::measurements::timer().start("bfs_total");
     auto current_frontier = _frontier.local_frontier(); // contains ids of vertices
     bool local_active = !current_frontier.empty();
     bool global_active = true;
+    kamping::measurements::timer().start("bfs_while_loop");
     while (global_active) {
+      kamping::measurements::timer().synchronize_and_start("bfs_iteration");
       for (VertexId vertex : current_frontier) {
         std::function<uint64_t (uint64_t, uint64_t)> minOp = [](uint64_t x, uint64_t y) { return std::min(x, y); };
         _distances.set(vertex, current_distance, minOp);
@@ -62,14 +78,26 @@ public:
           _frontier.add(neighbor);
         }
       }
-
+      kamping::measurements::timer().stop();
+      kamping::measurements::timer().synchronize_and_start("bfs_exchange");
       _frontier.exchange([this](const size_t vertex_id) { return _graph->vertex_dist->owner(vertex_id); });
-      current_frontier = _frontier.local_frontier();
+      kamping::measurements::timer().stop();
 
+      kamping::measurements::timer().synchronize_and_start("bfs_local_frontier");
+      current_frontier = _frontier.local_frontier();
       local_active = !current_frontier.empty();
+      kamping::measurements::timer().stop();
+
+      kamping::measurements::timer().synchronize_and_start("bfs_allreduce");
       global_active = _comm.allreduce_single(kamping::send_buf(local_active), kamping::op(kamping::ops::logical_or<>{}));
+      kamping::measurements::timer().stop();
+
+      kamping::measurements::timer().synchronize_and_start("bfs_increment_distance");
       ++current_distance;
+      kamping::measurements::timer().stop();
     }
+    kamping::measurements::timer().stop();
+    kamping::measurements::timer().stop();
   }
 
   const distributed::DistributedArray<uint64_t>& distances() const { return _distances; }
