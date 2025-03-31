@@ -6,11 +6,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
 import os
-import shutil  # Add this import at the top of the file
+import shutil
 
 # Graph types to test
 GRAPH_TYPES = [
-    # "gnm-undirected",
+    "gnm-undirected",
     # "gnm-directed",
     # "gnp-undirected",
     # "gnp-directed",
@@ -19,9 +19,9 @@ GRAPH_TYPES = [
     # "grid2d",
     # "rdg2d",
     # "rdg3d",
-    # "ba",
+    "ba",
     # "kronecker",
-    "rmat"
+    # "rmat"
 ]
 
 # Programs to benchmark
@@ -41,8 +41,8 @@ OUTPUT_KEY_TYPE = {
     "havoqgt_bfs": "run_bfs"
 }
 
-LOG_PER_PE_NODE_COUNT = 18
-LOG_PER_PE_EDGE_COUNT = 21
+LOG_PER_PE_NODE_COUNT = 5
+LOG_PER_PE_EDGE_COUNT = 6
 
 def is_slurm_environment():
     """Check if running in SLURM environment."""
@@ -166,7 +166,7 @@ def generate_plots(runtimes, graph_type, program):
     efficiency = [s/p for s, p in zip(speedup, processors)]
     
     # Create plots
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15, 5))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
     
     # Runtime plot
     ax1.plot(processors, times, 'b-o')
@@ -175,21 +175,12 @@ def generate_plots(runtimes, graph_type, program):
     ax1.set_title(f'Runtime vs Processors - {graph_type} - {program}')
     ax1.grid(True)
     
-    # Speedup plot
-    ax2.plot(processors, speedup, 'g-o')
-    ax2.plot(processors, processors, 'r--', label='Ideal Speedup')
-    ax2.set_xlabel('Number of Processors')
-    ax2.set_ylabel('Speedup')
-    ax2.set_title(f'Speedup vs Processors - {graph_type} - {program}')
-    ax2.legend()
-    ax2.grid(True)
-    
     # Efficiency plot
-    ax3.plot(processors, efficiency, 'm-o')
-    ax3.set_xlabel('Number of Processors')
-    ax3.set_ylabel('Efficiency')
-    ax3.set_title(f'Efficiency vs Processors - {graph_type} - {program}')
-    ax3.grid(True)
+    ax2.plot(processors, efficiency, 'm-o')
+    ax2.set_xlabel('Number of Processors')
+    ax2.set_ylabel('Efficiency')
+    ax2.set_title(f'Efficiency vs Processors - {graph_type} - {program}')
+    ax2.grid(True)
     
     plt.tight_layout()
     plt.savefig(f'../benchmark_results/performance_plots_{graph_type}_{program}.png')
@@ -214,7 +205,7 @@ def generate_average_plots(all_runtimes, program):
     efficiency = [s/p for s, p in zip(speedup, processors)]
     
     # Create plots
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15, 5))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
     
     # Runtime plot
     ax1.plot(processors, avg_times, 'b-o')
@@ -223,21 +214,12 @@ def generate_average_plots(all_runtimes, program):
     ax1.set_title(f'Average Runtime vs Processors - {program}')
     ax1.grid(True)
     
-    # Speedup plot
-    ax2.plot(processors, speedup, 'g-o')
-    ax2.plot(processors, processors, 'r--', label='Ideal Speedup')
-    ax2.set_xlabel('Number of Processors')
-    ax2.set_ylabel('Average Speedup')
-    ax2.set_title(f'Average Speedup vs Processors - {program}')
-    ax2.legend()
-    ax2.grid(True)
-    
     # Efficiency plot
-    ax3.plot(processors, efficiency, 'm-o')
-    ax3.set_xlabel('Number of Processors')
-    ax3.set_ylabel('Average Efficiency')
-    ax3.set_title(f'Average Efficiency vs Processors - {program}')
-    ax3.grid(True)
+    ax2.plot(processors, efficiency, 'm-o')
+    ax2.set_xlabel('Number of Processors')
+    ax2.set_ylabel('Average Efficiency')
+    ax2.set_title(f'Average Efficiency vs Processors - {program}')
+    ax2.grid(True)
     
     plt.tight_layout()
     plt.savefig(f'../benchmark_results/performance_plots_average_{program}.png')
@@ -246,14 +228,6 @@ def generate_average_plots(all_runtimes, program):
 def main():
     # Clear graphs directory at the start of the run
     graphs_dir = Path("../graphs")
-    if graphs_dir.exists():
-        print("Clearing graphs directory...")
-        # Remove entire directory and its contents
-        shutil.rmtree(graphs_dir)
-    
-    # Recreate the empty graphs directory
-    graphs_dir.mkdir(exist_ok=True)
-
     # Create benchmark_results directory if it doesn't exist
     Path("../benchmark_results").mkdir(exist_ok=True)
     
@@ -264,6 +238,16 @@ def main():
     for graph_type in GRAPH_TYPES:
         print(f"\nTesting graph type: {graph_type}")
         
+        # Clear graphs directory to save space
+        if graphs_dir.exists():
+            print("Clearing graphs directory...")
+            # Remove entire directory and its contents
+            shutil.rmtree(graphs_dir)
+        
+        # Recreate the empty graphs directory
+        graphs_dir.mkdir(exist_ok=True)
+
+
         # Generate graphs once for each processor count
         for num_procs in processors:
             print(f"Generating graph with {num_procs} processors...")
