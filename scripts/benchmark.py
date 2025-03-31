@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import subprocess
-import time
+import math
 import json
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,7 +10,7 @@ import shutil  # Add this import at the top of the file
 
 # Graph types to test
 GRAPH_TYPES = [
-    "gnm-undirected",
+    # "gnm-undirected",
     # "gnm-directed",
     # "gnp-undirected",
     # "gnp-directed",
@@ -21,15 +21,17 @@ GRAPH_TYPES = [
     # "rdg3d",
     # "ba",
     # "kronecker",
-    # "rmat"
+    "rmat"
 ]
 
 # Programs to benchmark
 PROGRAMS = {
     "DistributedGrarrph_bfs": "../build/run_bfs",
-    "DistributedGrarrph_cc": "../build/run_cc",
-    "havoqgt_cc": "../baseline_frameworks/havoqgt/build/src/run_cc",
-    "havoqgt_bfs": "../baseline_frameworks/havoqgt/build/src/run_bfs"
+    # "DistributedGrarrph_cc": "../build/run_cc",
+    # "havoqgt_cc": "../baseline_frameworks/havoqgt/build/src/run_cc",
+    # "havoqgt_bfs": "../baseline_frameworks/havoqgt/build/src/run_bfs",
+    # "CombBLAS_BFS": "../baseline_frameworks/CombBLAS/build/Applications/tdbfs",
+    # "CombBLAS_CC": "../baseline_frameworks/CombBLAS/build/Applications/lacc"
 }
 
 OUTPUT_KEY_TYPE = {
@@ -39,8 +41,8 @@ OUTPUT_KEY_TYPE = {
     "havoqgt_bfs": "run_bfs"
 }
 
-LOG_PER_PE_NODE_COUNT = 16
-LOG_PER_PE_EDGE_COUNT = 19
+LOG_PER_PE_NODE_COUNT = 18
+LOG_PER_PE_EDGE_COUNT = 21
 
 def is_slurm_environment():
     """Check if running in SLURM environment."""
@@ -54,9 +56,12 @@ def get_processor_list():
         print("Running locally - limiting processor count to 8")
         return [1, 2, 4, 8]
 
-def generate_graph(num_processors, graph_type, log_per_pe_node_count, log_per_pe_edge_count):
+def generate_graph(num_processors, graph_type, log_per_pe_node_count, log_per_pe_edge_count, distributed_output=True):
     """Generate the graph using the generate_graphs.py script."""
-    cmd = f"python3 ./generate_graphs.py {graph_type} {num_processors} --nodes {log_per_pe_node_count} --edges {log_per_pe_edge_count}"
+    if distributed_output:
+        cmd = f"python3 ./generate_graphs.py {graph_type} {num_processors} --nodes {log_per_pe_node_count} --edges {log_per_pe_edge_count} --distributed-output"
+    else:
+        cmd = f"python3 ./generate_graphs.py {graph_type} {num_processors} --nodes {log_per_pe_node_count} --edges {log_per_pe_edge_count}"
     print(f"Generating graph: {cmd}")
     subprocess.run(cmd, shell=True, check=True)
 
@@ -88,38 +93,64 @@ def run_benchmark(num_processors, graph_type, program):
     if program == "DistributedGrarrph_bfs" or program == "DistributedGrarrph_cc":
         cmd = f"mpirun -n {num_processors} {PROGRAMS[program]} -g 'type={graph_type};n={2**(LOG_PER_PE_NODE_COUNT + num_processors.bit_length() - 1)};m={2**(LOG_PER_PE_EDGE_COUNT + num_processors.bit_length() - 1)}'"
         # cmd = f"mpirun -n {num_processors} {PROGRAMS[program]} -g 'file;filename={graph_file};input_format=plain-edgelist'"
-    else:
+    elif program == "havoqgt_bfs" or program == "havoqgt_cc":
         # For HavoqGT programs, use the ingested database
         db_path = ingest_graph_for_havoqgt(num_processors, graph_type)
         cmd = f"mpirun -n {num_processors} {PROGRAMS[program]} -i {db_path}"
-    
+    elif program == "CombBLAS_BFS" or program == "CombBLAS_CC":
+        graph_path = f"../graphs/{graph_type}_n={2**(LOG_PER_PE_NODE_COUNT + num_processors.bit_length() - 1)}_m={2**(LOG_PER_PE_EDGE_COUNT + num_processors.bit_length() - 1)}-singlefile"
+        if program == "CombBLAS_BFS":
+            cmd = f"mpirun -n {num_processors} {PROGRAMS[program]} Input {graph_path}"
+        elif program == "CombBLAS_CC":
+            cmd = f"mpirun -n {num_processors} {PROGRAMS[program]} -I triples -M {graph_path}"
+    else:
+        raise ValueError(f"Unknown program: {program}")
+
     print(f"Running command: {cmd}")
     result = subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True)
-    print("---------------STDOUT-----------------")
-    print(result.stdout)
-    print("---------------STDOUT-----------------")
+    output = result.stdout + result.stderr
 
-    
-    start_time = time.time()
-    try:
-        # Find the first '{' and last '}' to extract the JSON
-        start_idx = result.stdout.find('{')
-        end_idx = result.stdout.rfind('}') + 1
-        print(start_idx, end_idx)
-        if start_idx == -1 or end_idx == 0:
-            raise ValueError("No JSON found in output")
+    if program == "CombBLAS_BFS":
+        # Parse CombBLAS BFS output to get minimum BFS time
+        bfs_times = []
+        for line in output.split('\n'):
+            print(line)
+            if "BFS time:" in line:
+                time_str = line.split("BFS time:")[1].split("seconds")[0].strip()
+                bfs_times.append(float(time_str))
         
-        json_str = result.stdout[start_idx:end_idx]
-        output_json = json.loads(json_str)
-        # Extract runtime from the nested structure
-        runtime = output_json["data"]["root"][OUTPUT_KEY_TYPE[program]]["statistics"]["max"][0]
-        return runtime
-    except (json.JSONDecodeError, KeyError, ValueError) as e:
-        print(f"Error parsing program output: {e}")
-        print(f"Full program output: {result.stdout}")
-        raise
-    end_time = time.time()
-    return end_time - start_time
+        if not bfs_times:
+            raise ValueError("Could not find any 'BFS time' entries in CombBLAS_BFS output")
+        
+        return min(bfs_times)
+        
+    elif program == "CombBLAS_CC":
+        # Parse CombBLAS CC output to get total time
+        for line in output.split('\n'):
+            if "Total time:" in line:
+                runtime = float(line.split(":")[1].strip())
+                return runtime
+        raise ValueError("Could not find 'Total time' in CombBLAS_CC output")
+    
+    else:
+        try:
+            # Find the first '{' and last '}' to extract the JSON
+            start_idx = result.stdout.find('{')
+            end_idx = result.stdout.rfind('}') + 1
+            print(start_idx, end_idx)
+            if start_idx == -1 or end_idx == 0:
+                raise ValueError("No JSON found in output")
+            
+            json_str = result.stdout[start_idx:end_idx]
+            output_json = json.loads(json_str)
+            # Extract runtime from the nested structure
+            print(output_json["data"]["root"])
+            runtime = output_json["data"]["root"][OUTPUT_KEY_TYPE[program]]["statistics"]["max"][0]
+            return runtime
+        except (json.JSONDecodeError, KeyError, ValueError) as e:
+            print(f"Error parsing program output: {e}")
+            print(f"Full program output: {result.stdout}")
+            raise
 
 def generate_plots(runtimes, graph_type, program):
     """Generate performance plots for a specific graph type and program."""
@@ -236,10 +267,15 @@ def main():
         # Generate graphs once for each processor count
         for num_procs in processors:
             print(f"Generating graph with {num_procs} processors...")
-            generate_graph(num_procs, graph_type, LOG_PER_PE_NODE_COUNT, LOG_PER_PE_EDGE_COUNT)
+            generate_graph(num_procs, graph_type, LOG_PER_PE_NODE_COUNT, LOG_PER_PE_EDGE_COUNT, distributed_output=True)
+            generate_graph(num_procs, graph_type, LOG_PER_PE_NODE_COUNT, LOG_PER_PE_EDGE_COUNT, distributed_output=False)
             
             # Run all programs on this graph
             for program in PROGRAMS:
+                if (program == "CombBLAS_BFS" or program == "CombBLAS_CC") and math.isqrt(num_procs) * math.isqrt(num_procs) != num_procs:
+                    print(f"Skipping {program} with {num_procs} processors because CombBLAS only works on a square logical processor grid")
+                    continue
+                
                 print(f"Running {program} with {num_procs} processors...")
                 runtime = run_benchmark(num_procs, graph_type, program)
                 
