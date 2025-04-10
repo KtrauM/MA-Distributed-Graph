@@ -70,10 +70,17 @@ public:
     }
 
     _local_data.clear();
-    _comm.alltoallv(kamping::send_buf(send_buffer), kamping::send_counts(send_counts), kamping::recv_buf<kamping::BufferResizePolicy::resize_to_fit>(_local_data));
+    std::cout << "Distributed set alltoallv, comm size " << _comm.size() << " send buffer size " << send_buffer.size() << " receive buffer local data size: " << _local_data.size() << "\n"; 
+    if (_comm.size() != 1) {
+      _comm.alltoallv(kamping::send_buf(send_buffer), kamping::send_counts(send_counts), kamping::recv_buf<kamping::BufferResizePolicy::resize_to_fit>(_local_data));
+    }
   }
  
   const std::vector<T> &local_data() const { return _local_data; }
+
+  const void updateCommunicator(kamping::Communicator<> &new_comm) {
+    _comm = new_comm;
+  }
 
 protected:
   int _rank;

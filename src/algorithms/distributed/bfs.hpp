@@ -23,26 +23,39 @@ public:
   }
 
   const std::vector<VertexId> &local_frontier() {
-    kamping::measurements::timer().synchronize_and_start("local_frontier_deduplicate");
+    // kamping::measurements::timer().synchronize_and_start("local_frontier_deduplicate");
     _local_frontier.deduplicate();
-    kamping::measurements::timer().stop();
+    // kamping::measurements::timer().stop();
 
-    kamping::measurements::timer().synchronize_and_start("local_frontier_filter");
+    // kamping::measurements::timer().synchronize_and_start("local_frontier_filter");
     const std::set<VertexId> visited_set(
         _visited.local_data().begin(),
         _visited.local_data().end());
     
     _local_frontier.filter([&visited_set](const VertexId &vertex) { return visited_set.find(vertex) == visited_set.end(); });
-    kamping::measurements::timer().stop();
+    // kamping::measurements::timer().stop();
 
-    kamping::measurements::timer().synchronize_and_start("local_frontier_insert");
+    // kamping::measurements::timer().synchronize_and_start("local_frontier_insert");
     _visited.insert(_local_frontier);
-    kamping::measurements::timer().stop();
+    // kamping::measurements::timer().stop();
     return _local_frontier.local_data();
   }
 
   const std::vector<VertexId> &visited() const {
     return _visited.local_data();
+  }
+
+  const std::string toString() const {
+    std::string str = "";
+    for (const auto &x: _local_frontier.local_data()) {
+      str += std::to_string(x);
+    }
+    return str;
+  }
+
+  const void updateCommunicator(kamping::Communicator<> &new_comm) {
+    _local_frontier.updateCommunicator(new_comm);
+    _visited.updateCommunicator(new_comm);
   }
 
 private:
@@ -54,16 +67,19 @@ private:
 class DistributedBFS {
 public:
   DistributedBFS(std::shared_ptr<DistributedCSRGraph> graph, kamping::Communicator<> const &comm, std::vector<VertexId> source_vertices)
-      : _graph(std::move(graph)), _comm(comm), _frontier(SetBasedDistributedFrontier(_comm, source_vertices)), _distances(_graph->vertex_dist, comm) {}
+      : _graph(std::move(graph)), _comm(comm), _frontier(SetBasedDistributedFrontier(_comm, source_vertices)), _distances(_graph->vertex_dist, comm, std::numeric_limits<uint64_t>::max()) {}
 
   void run() {
-    kamping::measurements::timer().start("bfs_total");
+    std::cout << "Running bfs on rank: " << _comm.rank() << " out of " << _comm.size() << " PEs.\n" << "Local frontier [0] and size: " << _frontier.local_frontier()[0] << " " << _frontier.local_frontier().size() << "\n";
+    // kamping::measurements::timer().start("bfs_total");
     auto current_frontier = _frontier.local_frontier(); // contains ids of vertices
     bool local_active = !current_frontier.empty();
     bool global_active = true;
-    kamping::measurements::timer().start("bfs_while_loop");
+    // kamping::measurements::timer().start("bfs_while_loop");
+
     while (global_active) {
-      kamping::measurements::timer().synchronize_and_start("bfs_iteration");
+      std::cout << "Global active status on PE " << _comm.rank() << " " << global_active << "\n";
+      // kamping::measurements::timer().synchronize_and_start("bfs_iteration");
       for (VertexId vertex : current_frontier) {
         std::function<uint64_t (uint64_t, uint64_t)> minOp = [](uint64_t x, uint64_t y) { return std::min(x, y); };
         _distances.set(vertex, current_distance, minOp);
@@ -78,32 +94,42 @@ public:
           _frontier.add(neighbor);
         }
       }
-      kamping::measurements::timer().stop();
-      kamping::measurements::timer().synchronize_and_start("bfs_exchange");
+      // kamping::measurements::timer().stop();
+      // kamping::measurements::timer().synchronize_and_start("bfs_exchange");
+      std::cout << "Started frontier exchange on PE " << _comm.rank() << "\n";
       _frontier.exchange([this](const size_t vertex_id) { return _graph->vertex_dist->owner(vertex_id); });
-      kamping::measurements::timer().stop();
+      std::cout << "Finished frontier exchange on PE " << _comm.rank() << "\n";
+      // kamping::measurements::timer().stop();
 
-      kamping::measurements::timer().synchronize_and_start("bfs_local_frontier");
+      // kamping::measurements::timer().synchronize_and_start("bfs_local_frontier");
       current_frontier = _frontier.local_frontier();
       local_active = !current_frontier.empty();
-      kamping::measurements::timer().stop();
+      std::cout << "Local active status on PE " << _comm.rank() << " " << local_active << "\n";
+      // kamping::measurements::timer().stop();
 
-      kamping::measurements::timer().synchronize_and_start("bfs_allreduce");
+      // kamping::measurements::timer().synchronize_and_start("bfs_allreduce");
+      std::cout << "Allreduce start on PE " << _comm.rank() << "\n";
       global_active = _comm.allreduce_single(kamping::send_buf(local_active), kamping::op(kamping::ops::logical_or<>{}));
-      kamping::measurements::timer().stop();
+      std::cout << "Allreduce done on PE " << _comm.rank() << "\n";
+      // kamping::measurements::timer().stop();
 
-      kamping::measurements::timer().synchronize_and_start("bfs_increment_distance");
+      // kamping::measurements::timer().synchronize_and_start("bfs_increment_distance");
       ++current_distance;
-      kamping::measurements::timer().stop();
+      // kamping::measurements::timer().stop();
     }
-    kamping::measurements::timer().stop();
-    kamping::measurements::timer().stop();
+    // kamping::measurements::timer().stop();
+    // kamping::measurements::timer().stop();
   }
 
   const distributed::DistributedArray<uint64_t>& distances() const { return _distances; }
 
   SetBasedDistributedFrontier &frontier() {
     return _frontier;
+  }
+
+  const void updateCommunicator(kamping::Communicator<> &new_comm) {
+    _comm = new_comm;
+    _frontier.updateCommunicator(new_comm);
   }
 
 private:

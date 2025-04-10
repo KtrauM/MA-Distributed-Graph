@@ -26,6 +26,9 @@ public:
   DistributedArray(std::shared_ptr<DistributionStrategy> strategy, kamping::Communicator<> const &comm)
       : _strategy(std::move(strategy)), _comm(comm), _rank(comm.rank()), _num_ranks(comm.size()), _local_data(strategy->local_size(_rank), T{}) {}
 
+  DistributedArray(std::shared_ptr<DistributionStrategy> strategy, kamping::Communicator<> const &comm, T initialization_value)
+      : _strategy(std::move(strategy)), _comm(comm), _rank(comm.rank()), _num_ranks(comm.size()), _local_data(strategy->local_size(_rank), initialization_value) {}
+
   void initialize_local(std::vector<T> elements, int rank) {
     // TODO: there is a bug here
     if (_local_data.size() != elements.size()) {
