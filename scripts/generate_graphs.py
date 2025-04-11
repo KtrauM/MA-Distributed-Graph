@@ -14,6 +14,7 @@ GRAPH_TYPES = [
     "grid2d",
     "rdg2d",
     "rdg3d",
+    "rhg",
     "ba",
     "kronecker",
     "rmat"
@@ -40,6 +41,9 @@ def generate_graph(graph_type, num_nodes, num_edges, num_procs, distributed_outp
         "-f", "edgelist",
         "-o", str(output_file),
     ]
+
+    if graph_type == "rhg":
+        cmd.extend(["--gamma", "2.8"])
 
     if distributed_output:
         cmd.append("--distributed-output")

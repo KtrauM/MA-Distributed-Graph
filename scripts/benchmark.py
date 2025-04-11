@@ -10,18 +10,19 @@ import shutil
 
 # Graph types to test
 GRAPH_TYPES = [
-    # "rmat",
+    "rhg", # gamma 2.8
+    "rmat", 
     "gnm-undirected",
     "gnm-directed",
     # "gnp-undirected",
     # "gnp-directed",
-    # "rgg2d",
-    # "rgg3d",
+    "rgg2d",
+    "rgg3d",
     # "grid2d",
     # "rdg2d",
     # "rdg3d",
-    "ba",
-    "kronecker",
+    # "ba",
+    # "kronecker",
 ]
 
 # Programs to benchmark
@@ -43,8 +44,8 @@ OUTPUT_KEY_TYPE = {
     "havoqgt_bfs": "run_bfs"
 }
 
-LOG_PER_PE_NODE_COUNT = 18
-LOG_PER_PE_EDGE_COUNT = 21
+LOG_PER_PE_NODE_COUNT = 4
+LOG_PER_PE_EDGE_COUNT = 5
 
 def is_slurm_environment():
     """Check if running in SLURM environment."""
@@ -93,7 +94,10 @@ def ingest_graph_for_havoqgt(num_processors, graph_type):
 def run_benchmark(num_processors, graph_type, program):
     """Run the algorithm with specified number of processors and graph type, return runtime."""
     if program == "DistributedGrarrph_bfs" or program == "DistributedGrarrph_cc":
-        cmd = f"mpirun -n {num_processors} {PROGRAMS[program]} -g 'type={graph_type};n={2**(LOG_PER_PE_NODE_COUNT + num_processors.bit_length() - 1)};m={2**(LOG_PER_PE_EDGE_COUNT + num_processors.bit_length() - 1)}'"
+        generator_string = f"type={graph_type};n={2**(LOG_PER_PE_NODE_COUNT + num_processors.bit_length() - 1)};m={2**(LOG_PER_PE_EDGE_COUNT + num_processors.bit_length() - 1)}"
+        if graph_type == "rhg":
+            generator_string += ";gamma=2.8"
+        cmd = f"mpirun -n {num_processors} {PROGRAMS[program]} -g '{generator_string}'"
         # cmd = f"mpirun -n {num_processors} {PROGRAMS[program]} -g 'file;filename={graph_file};input_format=plain-edgelist'"
     elif program == "havoqgt_bfs" or program == "havoqgt_cc":
         # For HavoqGT programs, use the ingested database
