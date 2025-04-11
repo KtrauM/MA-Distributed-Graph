@@ -16,7 +16,7 @@ namespace distributed {
 template <typename T> class DistributedSet {
 public:
   DistributedSet(kamping::Communicator<> const &comm)
-      : _comm(comm), _rank(comm.rank()), _num_ranks(comm.size()) {}
+      : _comm(comm) {}
 
   void insert(T element) {
     _local_data.push_back(element);
@@ -61,19 +61,16 @@ public:
       outgoing_data[target].push_back(element);
     }
 
-    std::vector<int> send_counts(_num_ranks, 0);
+    std::vector<int> send_counts(_comm.size(), 0);
     std::vector<T> send_buffer;
 
-    for (int rank = 0; rank < _num_ranks; ++rank) {
+    for (int rank = 0; rank < _comm.size(); ++rank) {
       send_counts[rank] = outgoing_data[rank].size();
       send_buffer.insert(send_buffer.end(), outgoing_data[rank].begin(), outgoing_data[rank].end());
     }
 
     _local_data.clear();
-    std::cout << "Distributed set alltoallv, comm size " << _comm.size() << " send buffer size " << send_buffer.size() << " receive buffer local data size: " << _local_data.size() << "\n"; 
-    if (_comm.size() != 1) {
-      _comm.alltoallv(kamping::send_buf(send_buffer), kamping::send_counts(send_counts), kamping::recv_buf<kamping::BufferResizePolicy::resize_to_fit>(_local_data));
-    }
+    _comm.alltoallv(kamping::send_buf(send_buffer), kamping::send_counts(send_counts), kamping::recv_buf<kamping::BufferResizePolicy::resize_to_fit>(_local_data));
   }
  
   const std::vector<T> &local_data() const { return _local_data; }
@@ -83,8 +80,6 @@ public:
   }
 
 protected:
-  int _rank;
-  int _num_ranks;
   std::vector<T> _local_data;
   kamping::Communicator<> _comm;
 };
