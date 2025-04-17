@@ -60,6 +60,15 @@ public:
       int target = mapping(element);
       outgoing_data[target].push_back(element);
     }
+    // std::cout << "Comm size " << _comm.size() << " " << ", rank: " << _comm.rank() << ", outgoing data:\n";
+    // for (int rank = 0; rank < _comm.size(); rank++) {
+    //   std::cout << "Target PE rank: " << rank << "\n";
+    //   for (auto x: outgoing_data[rank]) {
+    //     std::cout << x << " ";
+    //   }
+
+    // }
+    // std::cout << "\n";
 
     std::vector<int> send_counts(_comm.size(), 0);
     std::vector<T> send_buffer;

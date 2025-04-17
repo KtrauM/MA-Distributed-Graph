@@ -12,27 +12,43 @@
 
 namespace distributed {
 
+enum class OperationType { IDENTITY, MIN, MAX };
+
+template <typename T> std::function<T(T, T)> get_operation(OperationType operation_type) {
+  switch (operation_type) {
+  case OperationType::IDENTITY:
+    return [](T x, T y) { return y; };
+  case OperationType::MIN:
+    return [](T x, T y) { return std::min(x, y); };
+  case OperationType::MAX:
+    return [](T x, T y) { return std::max(x, y); };
+  default:
+    return [](T x, T y) { return y; };
+  }
+}
+
 template <typename T> struct ArrayUpdate {
   size_t global_index;
   T value;
-  std::function<T (T x, T y)> operation;
+  OperationType operation_type;
 
-  ArrayUpdate(size_t global_index, T value) : global_index(global_index), value(value), operation([](T x, T y) { return y; }) {}
-  ArrayUpdate(size_t global_index, T value, std::function<T (T x, T y)> operation) : global_index(global_index), value(value), operation(operation) {}
+  ArrayUpdate() : global_index(0), value{}, operation_type(OperationType::IDENTITY) {}
+  ArrayUpdate(size_t global_index, T value) : global_index(global_index), value(value), operation_type(OperationType::IDENTITY) {}
+  ArrayUpdate(size_t global_index, T value, OperationType operation_type) : global_index(global_index), value(value), operation_type(operation_type) {}
 };
 
 template <typename T> class DistributedArray {
 public:
   DistributedArray(std::shared_ptr<DistributionStrategy> strategy, kamping::Communicator<> const &comm)
-      : _strategy(std::move(strategy)), _comm(comm), _rank(comm.rank()), _num_ranks(comm.size()), _local_data(strategy->local_size(_rank), T{}) {}
+      : _strategy(std::move(strategy)), _comm(comm), _local_data(strategy->local_size(comm.rank()), T{}) {}
 
   DistributedArray(std::shared_ptr<DistributionStrategy> strategy, kamping::Communicator<> const &comm, T initialization_value)
-      : _strategy(std::move(strategy)), _comm(comm), _rank(comm.rank()), _num_ranks(comm.size()), _local_data(strategy->local_size(_rank), initialization_value) {}
+      : _strategy(std::move(strategy)), _comm(comm), _local_data(strategy->local_size(comm.rank()), initialization_value) {}
 
   void initialize_local(std::vector<T> elements, int rank) {
     // TODO: there is a bug here
     if (_local_data.size() != elements.size()) {
-      std::cout << "PE " << _rank << "/" << _num_ranks << ": local_data.size(): " << _local_data.size() << ", elements.size(): " << elements.size() << std::endl;
+      // std::cout << "PE " << _comm.rank() << "/" << _comm.size() << ": local_data.size(): " << _local_data.size() << ", elements.size(): " << elements.size() << std::endl;
       throw std::logic_error("Mismatch between expected _local_data and input data size");
     }
     _local_data = std::move(elements);
@@ -41,8 +57,8 @@ public:
   void set(size_t global_index, T value) {
     int owner = _strategy->owner(global_index);
     // Data is local
-    if (owner == _rank) {
-      size_t local_index = _strategy->to_local_index(_rank, global_index);
+    if (owner == _comm.rank()) {
+      size_t local_index = _strategy->to_local_index(_comm.rank(), global_index);
       _local_data[local_index] = value;
       return;
     }
@@ -50,42 +66,47 @@ public:
     _outgoing_data[owner].push_back({global_index, value});
   }
 
-  void set(size_t global_index, T value, std::function<T (T, T)> operation) {
+  void set(size_t global_index, T value, OperationType operation_type) {
     int owner = _strategy->owner(global_index);
     // Data is local
-    if (owner == _rank) {
-      size_t local_index = _strategy->to_local_index(_rank, global_index);
+    if (owner == _comm.rank()) {
+      size_t local_index = _strategy->to_local_index(_comm.rank(), global_index);
+      std::function<T(T, T)> operation = get_operation<T>(operation_type);
+      // std::cout << "_local data vs update avlue " << _local_data[local_index] << " " << value << "\n";
       _local_data[local_index] = operation(_local_data[local_index], value);
       return;
     }
     // Data is non-local
-    _outgoing_data[owner].push_back({global_index, value, operation});
+    // std::cout << "Set delegated to exchange as the index is not local, update value: " << value << "\n";
+    _outgoing_data[owner].push_back({global_index, value, operation_type});
   }
 
   T get(size_t global_index) const {
-    if (_rank != _strategy->owner(global_index)) {
+    if (_comm.rank() != _strategy->owner(global_index)) {
       throw std::out_of_range("Accessed global_index " + std::to_string(global_index) + " is not present in local data of PE " + std::to_string(_comm.rank()) + ".");
     }
-    size_t local_index = _strategy->to_local_index(_rank, global_index);
+    size_t local_index = _strategy->to_local_index(_comm.rank(), global_index);
     return _local_data[local_index];
   }
 
-  void exchange() {
-    std::vector<int> send_counts(_num_ranks, 0);
+  void exchange(kamping::Communicator<> sub_comm) {
+    std::vector<int> send_counts(sub_comm.size(), 0);
     std::vector<ArrayUpdate<T>> send_buffer;
     std::vector<ArrayUpdate<T>> recv_buffer;
 
-    for (int rank = 0; rank < _num_ranks; ++rank) {
+    for (int rank = 0; rank < sub_comm.size(); ++rank) {
         const auto& updates = _outgoing_data[rank];
         send_counts[rank] = updates.size();
         send_buffer.insert(send_buffer.end(), updates.begin(), updates.end());
     }
 
-    _comm.alltoallv(kamping::send_buf(send_buffer), kamping::send_counts(send_counts), kamping::recv_buf<kamping::BufferResizePolicy::grow_only>(recv_buffer));
+    sub_comm.alltoallv(kamping::send_buf(send_buffer), kamping::send_counts(send_counts), kamping::recv_buf<kamping::BufferResizePolicy::grow_only>(recv_buffer));
 
     for (const auto &update : recv_buffer) {
-      size_t local_index = _strategy->to_local_index(_rank, update.global_index);
-      _local_data[local_index] = update.operation(_local_data[local_index], update.value);
+      size_t local_index = _strategy->to_local_index(_comm.rank(), update.global_index);
+      std::function<T(T, T)> operation = get_operation<T>(update.operation_type);
+      // std::cout << "exchange _local data vs update avlue " << _local_data[local_index] << " " << update.value << "\n";
+      _local_data[local_index] = operation(_local_data[local_index], update.value);
     }
 
     _outgoing_data.clear();
@@ -96,7 +117,7 @@ public:
     std::vector<T> data, all_data, global_array;
 
     for (size_t local_index = 0; local_index < _local_data.size(); ++local_index) {
-      indices.push_back(_strategy->to_global_index(_rank, local_index));
+      indices.push_back(_strategy->to_global_index(_comm.rank(), local_index));
       data.push_back(_local_data[local_index]);
     }
 
@@ -117,7 +138,7 @@ public:
   std::vector<T> &local_data() { return _local_data; }
 
   void print_local() const {
-    std::cout<< "PE: " << _rank << ": ";
+    std::cout<< "PE: " << _comm.rank() << ": ";
     for (auto const& x: _local_data) {
       std::cout << x << ' ';
     }
@@ -125,7 +146,7 @@ public:
   }
 
   void print_local_vertex() const {
-    std::cout<< "PE: " << _rank << ": ";
+    std::cout<< "PE: " << _comm.rank() << ": ";
     for (auto const& x: _local_data) {
       std::cout << x.edge_start_index << ',' << x.edge_end_index << ' ';
     }
@@ -133,8 +154,6 @@ public:
   }
 
 private:
-  int _rank;
-  int _num_ranks;
   std::vector<T> _local_data;
   std::unordered_map<int, std::vector<ArrayUpdate<T>>> _outgoing_data;
   std::shared_ptr<DistributionStrategy> _strategy;

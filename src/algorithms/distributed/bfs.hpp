@@ -32,7 +32,7 @@ public:
         _visited.local_data().begin(),
         _visited.local_data().end());
     
-    _local_frontier.filter([&visited_set](const VertexId &vertex) { return visited_set.find(vertex) == visited_set.end(); });
+    _local_frontier.filter([&visited_set](const VertexId &vertex) { return visited_set.find(vertex) != visited_set.end(); });
     // kamping::measurements::timer().stop();
 
     // kamping::measurements::timer().synchronize_and_start("local_frontier_insert");
@@ -46,8 +46,12 @@ public:
   }
 
   const std::string toString() const {
-    std::string str = "";
+    std::string str = "Local data: ";
     for (const auto &x: _local_frontier.local_data()) {
+      str += std::to_string(x);
+    }
+    str += ", visited: ";
+    for (const auto &x: _visited.local_data()) {
       str += std::to_string(x);
     }
     return str;
@@ -67,23 +71,26 @@ private:
 class DistributedBFS {
 public:
   DistributedBFS(std::shared_ptr<DistributedCSRGraph> graph, kamping::Communicator<> const &comm, std::vector<VertexId> source_vertices)
-      : _graph(std::move(graph)), _comm(comm), _frontier(SetBasedDistributedFrontier(_comm, source_vertices)), _distances(_graph->vertex_dist, comm, std::numeric_limits<uint64_t>::max()) {}
+      : _graph(std::move(graph)), _initial_rank(comm.rank()), _comm(comm), _frontier(SetBasedDistributedFrontier(_comm, source_vertices)), _distances(_graph->vertex_dist, comm, std::numeric_limits<uint64_t>::max()) {}
 
   void run() {
     // kamping::measurements::timer().start("bfs_total");
+    // std::cout << "Frontier print " << _frontier.toString() << " on PE " << _comm.rank() << "\n";
     auto current_frontier = _frontier.local_frontier(); // contains ids of vertices
+    // std::cout << "Frontier print after accessing local_frontier" << _frontier.toString() << " on PE " << _comm.rank() << "\n";
     bool local_active = !current_frontier.empty();
     bool global_active = true;
     // kamping::measurements::timer().start("bfs_while_loop");
 
     while (global_active) {
       // kamping::measurements::timer().synchronize_and_start("bfs_iteration");
+      // std::cout << "Current frontier size " << current_frontier.size() << "\n";
       for (VertexId vertex : current_frontier) {
-        std::function<uint64_t (uint64_t, uint64_t)> minOp = [](uint64_t x, uint64_t y) { return std::min(x, y); };
-        _distances.set(vertex, current_distance, minOp);
-        if (_graph->vertex_dist->owner(vertex) != _comm.rank()) {
+        // std::cout << "Setting vertex " << vertex << " distance to " << current_distance << "\n";
+        _distances.set(vertex, current_distance, distributed::OperationType::MIN);
+        if (_graph->vertex_dist->owner(vertex) != _initial_rank) {
           throw std::logic_error("Vertex " + std::to_string(vertex) + " belongs to another worker: " +
-                                 std::to_string(_graph->vertex_dist->owner(vertex)) + ", but was found in worker " + std::to_string(_comm.rank()));
+                                 std::to_string(_graph->vertex_dist->owner(vertex)) + ", but was found in worker " + std::to_string(_initial_rank));
         }
 
         auto [edge_index_start, edge_index_end] = _graph->vertex_array.get(vertex);
@@ -95,6 +102,8 @@ public:
       // kamping::measurements::timer().stop();
       // kamping::measurements::timer().synchronize_and_start("bfs_exchange");
       _frontier.exchange([this](const size_t vertex_id) { return _graph->vertex_dist->owner(vertex_id); });
+      // std::cout << "Distance exchange\n";
+      _distances.exchange(_comm);
       // kamping::measurements::timer().stop();
 
       // kamping::measurements::timer().synchronize_and_start("bfs_local_frontier");
@@ -126,6 +135,7 @@ public:
   }
 
 private:
+  int _initial_rank;
   kamping::Communicator<> _comm;
   SetBasedDistributedFrontier _frontier;
   std::shared_ptr<DistributedCSRGraph> _graph;

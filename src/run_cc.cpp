@@ -43,13 +43,15 @@ int main(int argc, char **argv) {
   // BFS example
   kagen::KaGen gen(MPI_COMM_WORLD);
   gen.UseCSRRepresentation();
-
+  // gen.EnableOutput(true);
   std::cout << "Generating graph" << std::endl;
   kamping::measurements::timer().synchronize_and_start("kagen_gen");
   auto kagen_graph = gen.GenerateFromOptionString(generator_options);
 
   kamping::measurements::timer().stop();
   std::cout << "Done generating graph" << std::endl;
+  // std::cout << kagen_graph.NumberOfGlobalVertices() << " " << kagen_graph.NumberOfGlobalEdges() << "\n";
+
   // Setup edge array
   kamping::measurements::timer().synchronize_and_start("build_edge_array");
   std::vector<size_t> edge_dist(comm.size() + 1);
@@ -87,6 +89,17 @@ int main(int argc, char **argv) {
   vertex_array.initialize_local(local_vertex_array, comm.rank());
   kamping::measurements::timer().stop();
 
+  // std::cout << "Vertex array\n";
+  // for (auto x: local_vertex_array) {
+  //   std::cout << "{" << x.edge_start_index << ", " << x.edge_end_index << "}, ";
+  // }
+
+  // std::cout << "\nEdge array\n";
+  // for (auto x: recasted_edge_ids) {
+  //   std::cout << x << ", ";
+  // }
+  // std::cout << "\n";
+
   // Build graph
   kamping::measurements::timer().synchronize_and_start("build_csr_graph");
   DistributedCSRGraph graph =
@@ -98,6 +111,7 @@ int main(int argc, char **argv) {
   kamping::measurements::timer().stop();
   kamping::measurements::timer().synchronize_and_start("run_cc");
   uint32_t num_components = cc.run();
+  std::cout << "Num components " << num_components << "\n";
   kamping::measurements::timer().stop();
 
   kamping::measurements::timer().aggregate_and_print(kamping::measurements::SimpleJsonPrinter<>{std::cout});
