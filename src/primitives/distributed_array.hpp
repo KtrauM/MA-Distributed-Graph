@@ -89,7 +89,7 @@ public:
     return _local_data[local_index];
   }
 
-  void exchange(kamping::Communicator<> sub_comm) {
+  void exchange(kamping::Communicator<> &sub_comm) {
     std::vector<int> send_counts(sub_comm.size(), 0);
     std::vector<ArrayUpdate<T>> send_buffer;
     std::vector<ArrayUpdate<T>> recv_buffer;

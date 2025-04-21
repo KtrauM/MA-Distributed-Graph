@@ -10,14 +10,14 @@ import shutil
 
 # Graph types to test
 GRAPH_TYPES = [
-    "rhg", # gamma 2.8
-    "rmat", 
+    # "rhg", # gamma 2.8
+    # "rmat", 
     "gnm-undirected",
-    "gnm-directed",
-    # "gnp-undirected",
-    # "gnp-directed",
-    "rgg2d",
-    "rgg3d",
+    # "gnm-directed",
+    # # "gnp-undirected",
+    # # "gnp-directed",
+    # "rgg2d",
+    # "rgg3d",
     # "grid2d",
     # "rdg2d",
     # "rdg3d",
@@ -32,7 +32,8 @@ PROGRAMS = {
     "havoqgt_cc": "../baseline_frameworks/havoqgt/build/src/run_cc",
     "havoqgt_bfs": "../baseline_frameworks/havoqgt/build/src/run_bfs",
     "CombBLAS_bfs": "../baseline_frameworks/CombBLAS/build/Applications/tdbfs",
-    "CombBLAS_cc": "../baseline_frameworks/CombBLAS/build/Applications/lacc"
+    "CombBLAS_cc": "../baseline_frameworks/CombBLAS/build/Applications/bfscc",
+    # "CombBLAS_lacc": "../baseline_frameworks/CombBLAS/build/Applications/lacc",
 }
 
 ALGORITHMS = set([program.split("_")[1] for program in PROGRAMS])
@@ -44,8 +45,8 @@ OUTPUT_KEY_TYPE = {
     "havoqgt_bfs": "run_bfs"
 }
 
-LOG_PER_PE_NODE_COUNT = 4
-LOG_PER_PE_EDGE_COUNT = 5
+LOG_PER_PE_NODE_COUNT = 12
+LOG_PER_PE_EDGE_COUNT = 14
 
 def is_slurm_environment():
     """Check if running in SLURM environment."""
@@ -103,11 +104,11 @@ def run_benchmark(num_processors, graph_type, program):
         # For HavoqGT programs, use the ingested database
         db_path = ingest_graph_for_havoqgt(num_processors, graph_type)
         cmd = f"mpirun -n {num_processors} {PROGRAMS[program]} -i {db_path}"
-    elif program == "CombBLAS_bfs" or program == "CombBLAS_cc":
+    elif program == "CombBLAS_bfs" or program == "CombBLAS_cc" or program == "CombBLAS_lacc":
         graph_path = f"../graphs/{graph_type}_n={2**(LOG_PER_PE_NODE_COUNT + num_processors.bit_length() - 1)}_m={2**(LOG_PER_PE_EDGE_COUNT + num_processors.bit_length() - 1)}-singlefile"
-        if program == "CombBLAS_bfs":
+        if program == "CombBLAS_bfs" or program == "CombBLAS_cc":
             cmd = f"mpirun -n {num_processors} {PROGRAMS[program]} Input {graph_path}"
-        elif program == "CombBLAS_cc":
+        elif program == "CombBLAS_lacc":
             cmd = f"mpirun -n {num_processors} {PROGRAMS[program]} -I triples -M {graph_path}"
     else:
         raise ValueError(f"Unknown program: {program}")
@@ -123,6 +124,20 @@ def run_benchmark(num_processors, graph_type, program):
             print(line)
             if "BFS time:" in line:
                 time_str = line.split("BFS time:")[1].split("seconds")[0].strip()
+                bfs_times.append(float(time_str))
+        
+        if not bfs_times:
+            raise ValueError("Could not find any 'BFS time' entries in CombBLAS_bfs output")
+        
+        return min(bfs_times)
+    
+    elif program == "CombBLAS_cc":
+        # Parse CombBLAS BFS output to get minimum BFS time
+        bfs_times = []
+        for line in output.split('\n'):
+            print(line)
+            if "CC runtime:" in line:
+                time_str = line.split("CC runtime:")[1].split("seconds")[0].strip()
                 bfs_times.append(float(time_str))
         
         if not bfs_times:
@@ -192,45 +207,6 @@ def generate_plots(runtimes, graph_type, program):
     plt.savefig(f'../benchmark_results/performance_plots_{graph_type}_{program}.png')
     plt.close()
 
-def generate_average_plots(all_runtimes, program):
-    """Generate average performance plots across all graph types for a specific program."""
-    # Create benchmark_results directory if it doesn't exist
-    Path("../benchmark_results").mkdir(exist_ok=True)
-    
-    processors = sorted(next(iter(all_runtimes.values())).keys())
-    
-    # Calculate averages for each number of processors
-    avg_times = []
-    for num_procs in processors:
-        times = np.array([runtimes[num_procs] for runtimes in all_runtimes.values()])
-        avg_times.append(np.mean(times))
-    
-    # Calculate speedup and efficiency
-    base_time = avg_times[0]
-    speedup = [base_time / t for t in avg_times]
-    efficiency = [s/p for s, p in zip(speedup, processors)]
-    
-    # Create plots
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
-    
-    # Runtime plot
-    ax1.plot(processors, avg_times, 'b-o')
-    ax1.set_xlabel('Number of Processors')
-    ax1.set_ylabel('Average Runtime (seconds)')
-    ax1.set_title(f'Average Runtime vs Processors - {program}')
-    ax1.grid(True)
-    
-    # Efficiency plot
-    ax2.plot(processors, efficiency, 'm-o')
-    ax2.set_xlabel('Number of Processors')
-    ax2.set_ylabel('Average Efficiency')
-    ax2.set_title(f'Average Efficiency vs Processors - {program}')
-    ax2.grid(True)
-    
-    plt.tight_layout()
-    plt.savefig(f'../benchmark_results/performance_plots_average_{program}.png')
-    plt.close()
-
 def generate_combined_comparison_plots(graph_type, algorithm, runtimes_all_programs):
     """
     Generate a combined comparison plot for a given graph type.
@@ -275,82 +251,6 @@ def generate_combined_comparison_plots(graph_type, algorithm, runtimes_all_progr
     plt.savefig(f"../benchmark_results/comparison_plots_{graph_type}_{algorithm}.png")
     plt.close()
 
-def generate_algorithm_comparison_plots(all_runtimes):
-    """
-    Generate comparison plots that average results for each algorithm type (BFS, CC)
-    across all graph types. This shows which implementation of each algorithm 
-    performs best on average.
-    """
-    # Get all available algorithms
-    algorithms = set()
-    for program in all_runtimes.keys():
-        algorithm = program.split("_")[1]
-        algorithms.add(algorithm)
-    
-    # For each algorithm type (bfs, cc)
-    for algorithm in algorithms:
-        print(f"Generating algorithm comparison plots for {algorithm}...")
-        
-        # Group runtimes by framework and processor count
-        framework_runtimes = {}
-        all_processors = set()
-        
-        # Collect data for this algorithm type
-        for program, graph_data in all_runtimes.items():
-            if program.split("_")[1] == algorithm:
-                framework = program.split("_")[0]
-                framework_runtimes[framework] = {}
-                
-                # Average across all graph types for each processor count
-                for graph_type, proc_data in graph_data.items():
-                    for proc_count, runtime in proc_data.items():
-                        all_processors.add(proc_count)
-                        if proc_count not in framework_runtimes[framework]:
-                            framework_runtimes[framework][proc_count] = []
-                        framework_runtimes[framework][proc_count].append(runtime)
-        
-        # Convert lists to averages
-        for framework in framework_runtimes:
-            for proc_count in framework_runtimes[framework]:
-                framework_runtimes[framework][proc_count] = np.mean(framework_runtimes[framework][proc_count])
-        
-        # Create plots
-        processors = sorted(all_processors)
-        
-        # Runtime comparison plot
-        plt.figure(figsize=(10, 8))
-        for framework, runtime_data in framework_runtimes.items():
-            plot_processors = [p for p in processors if p in runtime_data]
-            times = [runtime_data[p] for p in plot_processors]
-            plt.plot(plot_processors, times, marker='o', label=framework)
-        
-        plt.xlabel("Number of Processors")
-        plt.ylabel("Average Runtime (seconds)")
-        plt.title(f"Average Runtime Comparison for {algorithm.upper()} Algorithm")
-        plt.legend()
-        plt.grid(True)
-        plt.savefig(f"../benchmark_results/algorithm_comparison_{algorithm}_runtime.png")
-        plt.close()
-        
-        # Efficiency comparison plot
-        plt.figure(figsize=(10, 8))
-        for framework, runtime_data in framework_runtimes.items():
-            plot_processors = [p for p in processors if p in runtime_data]
-            times = [runtime_data[p] for p in plot_processors]
-            if times:  # Check if we have data
-                base_time = times[0]
-                speedup = [base_time / t if t != 0 else 0 for t in times]
-                efficiency = [s/p for s, p in zip(speedup, plot_processors)]
-                plt.plot(plot_processors, efficiency, marker='o', label=framework)
-        
-        plt.xlabel("Number of Processors")
-        plt.ylabel("Average Efficiency")
-        plt.title(f"Average Efficiency Comparison for {algorithm.upper()} Algorithm")
-        plt.legend()
-        plt.grid(True)
-        plt.savefig(f"../benchmark_results/algorithm_comparison_{algorithm}_efficiency.png")
-        plt.close()
-
 def main():
     # Clear graphs directory at the start of the run
     graphs_dir = Path("../graphs")
@@ -379,7 +279,7 @@ def main():
             
             # Run all programs on this graph
             for program in PROGRAMS:
-                if (program == "CombBLAS_bfs" or program == "CombBLAS_cc") and math.isqrt(num_procs) * math.isqrt(num_procs) != num_procs:
+                if (program.split("_")[0] == "CombBLAS") and math.isqrt(num_procs) * math.isqrt(num_procs) != num_procs:
                     print(f"Skipping {program} with {num_procs} processors because CombBLAS only works on a square logical processor grid")
                     continue
                 
@@ -402,9 +302,6 @@ def main():
         for graph_type in GRAPH_TYPES:
             generate_plots(all_runtimes[program][graph_type], graph_type, program)
         
-        # Generate average plots
-        generate_average_plots(all_runtimes[program], program)
-        
         # Save results to JSON
         with open(f'../benchmark_results/benchmark_results_{program}.json', 'w') as f:
             json.dump(all_runtimes[program], f, indent=4)
@@ -420,15 +317,10 @@ def main():
                 generate_combined_comparison_plots(graph_type, algorithm, runtimes_for_graph_algo)
                 print(f"Combined comparison plot generated for graph type {graph_type}-{algorithm}")
     
-    # Generate algorithm comparison plots (averaged over all graph types)
-    generate_algorithm_comparison_plots(all_runtimes)
-    print("Algorithm comparison plots generated")
-    
     print("\nBenchmark completed. Results saved to:")
     for program in PROGRAMS:
         print(f"\nFor {program}:")
         print(f"- ../benchmark_results/benchmark_results_{program}.json")
-        print(f"- ../benchmark_results/performance_plots_average_{program}.png")
         for graph_type in GRAPH_TYPES:
             print(f"- ../benchmark_results/performance_plots_{graph_type}_{program}.png")
 
@@ -436,11 +328,6 @@ def main():
     for graph_type in GRAPH_TYPES:
         for algorithm in ALGORITHMS:
             print(f"- ../benchmark_results/comparison_plots_{graph_type}_{algorithm}.png")
-    
-    print("\nAlgorithm comparison plots:")
-    for algorithm in ALGORITHMS:
-        print(f"- ../benchmark_results/algorithm_comparison_{algorithm}_runtime.png")
-        print(f"- ../benchmark_results/algorithm_comparison_{algorithm}_efficiency.png")
 
 if __name__ == "__main__":
     all_runtimes = {}  # Initialize the results dictionary
