@@ -1,0 +1,32 @@
+name: grarrph-cc
+executable: run_cc
+ncores: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
+time_limit: 6
+threads_per_rank: [1]
+graphs:
+  - generator: run-grarrph
+    type: rmat
+    N: 12
+    M: 15
+    scale_weak: TRUE
+  - generator: run-grarrph
+    type: rgg2d
+    N: 12
+    M: 15
+    scale_weak: TRUE
+  - generator: run-grarrph
+    type: rgg3d
+    N: 12
+    M: 15
+    scale_weak: TRUE
+  - generator: run-grarrph
+    type: gnm-undirected
+    N: 12
+    M: 15
+    scale_weak: TRUE
+  - generator: run-grarrph
+    type: rhg
+    N: 12
+    M: 15
+    gamma: 2.6
+    scale_weak: TRUE

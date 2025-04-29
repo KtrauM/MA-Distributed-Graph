@@ -1,0 +1,32 @@
+name: ingest-havoqgt
+executable: ../baseline_frameworks/havoqgt/build/src/ingest_edge_list
+ncores: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
+time_limit: 6
+threads_per_rank: [1]
+graphs:
+  - generator: ingest-havoqgt
+    type: rmat
+    N: 12
+    M: 15
+    scale_weak: TRUE
+  - generator: ingest-havoqgt
+    type: rgg2d
+    N: 12
+    M: 15
+    scale_weak: TRUE
+  - generator: ingest-havoqgt
+    type: rgg3d
+    N: 12
+    M: 15
+    scale_weak: TRUE
+  - generator: ingest-havoqgt
+    type: gnm-undirected
+    N: 12
+    M: 15
+    scale_weak: TRUE
+  - generator: ingest-havoqgt
+    type: rhg
+    N: 12
+    M: 15
+    gamma: 2.6
+    scale_weak: TRUE

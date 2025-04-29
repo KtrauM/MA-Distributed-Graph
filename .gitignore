@@ -41,3 +41,4 @@ build/
 benchmark_results/
 graphs/
 slurm_logs/
+experiment_data/

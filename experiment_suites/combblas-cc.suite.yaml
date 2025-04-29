@@ -1,0 +1,32 @@
+name: combblas-cc
+executable: ../baseline_frameworks/CombBLAS/build/Applications/bfscc
+ncores: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
+time_limit: 6
+threads_per_rank: [1]
+graphs:
+  - generator: run-combblas
+    type: rmat
+    N: 12
+    M: 15
+    scale_weak: TRUE
+  - generator: run-combblas
+    type: rgg2d
+    N: 12
+    M: 15
+    scale_weak: TRUE
+  - generator: run-combblas
+    type: rgg3d
+    N: 12
+    M: 15
+    scale_weak: TRUE
+  - generator: run-combblas
+    type: gnm-undirected
+    N: 12
+    M: 15
+    scale_weak: TRUE
+  - generator: run-combblas
+    type: rhg
+    N: 12
+    M: 15
+    gamma: 2.6
+    scale_weak: TRUE
