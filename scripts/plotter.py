@@ -51,6 +51,40 @@ def parse_filename(filename):
     print(f"Failed to match pattern on: {filename}")
     return None
 
+def extract_grarrph_detailed_timing(log_path):
+    """Extract detailed timing data from grarrph log file."""
+    try:
+        with open(log_path, 'r') as f:
+            output = f.read()
+            
+        start_idx = output.find('{')
+        end_idx = output.rfind('}') + 1
+        if start_idx == -1 or end_idx == 0:
+            return None
+            
+        json_str = output[start_idx:end_idx]
+        output_json = json.loads(json_str)
+        
+        # Extract the timing components
+        bfs_total = output_json["data"]["root"]["run_cc"]["bfs_run_iteration"]["bfs_total"]["statistics"]["max"][0]
+        frontier_exchange = output_json["data"]["root"]["run_cc"]["bfs_run_iteration"]["bfs_total"]["bfs_while_loop"]["frontier_exchange"]["statistics"]["max"][0]
+        distance_exchange = output_json["data"]["root"]["run_cc"]["bfs_run_iteration"]["bfs_total"]["bfs_while_loop"]["distance_exchange"]["statistics"]["max"][0]
+        frontier_deduplication = output_json["data"]["root"]["run_cc"]["bfs_run_iteration"]["bfs_total"]["bfs_while_loop"]["frontier_deduplication"]["statistics"]["max"][0]
+        frontier_pruning = output_json["data"]["root"]["run_cc"]["bfs_run_iteration"]["bfs_total"]["bfs_while_loop"]["frontier_pruning"]["statistics"]["max"][0]
+        bfs_allreduce_global_active = output_json["data"]["root"]["run_cc"]["bfs_run_iteration"]["bfs_total"]["bfs_while_loop"]["bfs_allreduce_global_active"]["statistics"]["max"][0]
+        
+        return {
+            "bfs_total": bfs_total,
+            "frontier_exchange": frontier_exchange,
+            "distance_exchange": distance_exchange,
+            "frontier_deduplication": frontier_deduplication,
+            "frontier_pruning": frontier_pruning,
+            "bfs_allreduce_global_active": bfs_allreduce_global_active
+        }
+    except (json.JSONDecodeError, KeyError, ValueError) as e:
+        print(f"Error parsing detailed timing data from {log_path}: {e}")
+        return None
+
 def extract_runtime_and_numccs_from_log(framework, log_path):
     """Extract runtime and number of CCs from log file based on framework format."""
     with open(log_path, 'r') as f:
@@ -60,23 +94,26 @@ def extract_runtime_and_numccs_from_log(framework, log_path):
         for line in output.split('\n'):
             if "CC runtime:" in line:
                 time_str = line.split("CC runtime:")[1].split("seconds")[0].strip()
-                return float(time_str), None
-        return None, None
+                return float(time_str), None, None
+        return None, None, None
 
     elif framework.startswith("grarrph-cc"):
         try:
             start_idx = output.find('{')
             end_idx = output.rfind('}') + 1
             if start_idx == -1 or end_idx == 0:
-                return None, None
+                return None, None, None
             json_str = output[start_idx:end_idx]
             output_json = json.loads(json_str)
             key_type = "run_cc"
             runtime = output_json["data"]["root"][key_type]["statistics"]["max"][0]
-            return runtime, None
+            
+            # Extract detailed timing data
+            detailed_timing = extract_grarrph_detailed_timing(log_path)
+            return runtime, None, detailed_timing
         except (json.JSONDecodeError, KeyError, ValueError) as e:
             print(f"Error parsing program output for {log_path}: {e}")
-            return None, None
+            return None, None, None
 
     elif framework.startswith("havoqgt-cc"):
         # Look for the line: Num CCs = <num>, largest CC (approx) = <size>, Traversal Time = <runtime>
@@ -88,9 +125,9 @@ def extract_runtime_and_numccs_from_log(framework, log_path):
                 numccs = int(m.group(1))
                 runtime = float(m.group(3))
                 break
-        return runtime, numccs
+        return runtime, numccs, None
 
-    return None, None
+    return None, None, None
 
 def collect_runtime_data(base_dir=DATA_DIR):
     """Collect runtime data from log files."""
@@ -127,10 +164,13 @@ def collect_runtime_data(base_dir=DATA_DIR):
             if key not in all_runtimes[program]:
                 all_runtimes[program][key] = {}
                 
-            runtime, numccs = extract_runtime_and_numccs_from_log(framework, log_file)
+            runtime, numccs, detailed_timing = extract_runtime_and_numccs_from_log(framework, log_file)
             
             if runtime is not None:
-                all_runtimes[program][key][cores] = {"runtime": runtime, "numccs": numccs}
+                entry = {"runtime": runtime, "numccs": numccs}
+                if detailed_timing:
+                    entry.update(detailed_timing)
+                all_runtimes[program][key][cores] = entry
                 print(f"Runtime for {program}, {graph_type} n={log_n} m={log_m}, {cores} cores: {runtime:.2f} seconds, NumCCs: {numccs}")
             else:
                 print(f"Warning: Could not extract runtime from {filename}")
@@ -152,12 +192,27 @@ def save_to_csv(all_runtimes, output_dir=OUTPUT_DIR):
                 # Write header
                 if program == "HavoqGT_cc":
                     writer.writerow(['Cores', 'Runtime', 'NumCCs'])
+                elif program == "DistributedGrarrph_cc":
+                    writer.writerow(['Cores', 'Runtime', 'NumCCs', 'bfs_total', 'frontier_exchange', 
+                                   'distance_exchange', 'frontier_deduplication', 'frontier_pruning',
+                                   'bfs_allreduce_global_active'])
                 else:
                     writer.writerow(['Cores', 'Runtime'])
+                
                 for cores in sorted(all_runtimes[program][key].keys()):
                     entry = all_runtimes[program][key][cores]
                     if program == "HavoqGT_cc":
                         writer.writerow([cores, entry["runtime"], entry["numccs"]])
+                    elif program == "DistributedGrarrph_cc":
+                        writer.writerow([
+                            cores, entry["runtime"], entry["numccs"],
+                            entry.get("bfs_total", ""),
+                            entry.get("frontier_exchange", ""),
+                            entry.get("distance_exchange", ""),
+                            entry.get("frontier_deduplication", ""),
+                            entry.get("frontier_pruning", ""),
+                            entry.get("bfs_allreduce_global_active", "")
+                        ])
                     else:
                         writer.writerow([cores, entry["runtime"]])
                     
@@ -382,6 +437,81 @@ def generate_all_comparisons_combined_plot(all_runtimes, output_dir=OUTPUT_DIR):
     
     print(f"Generated combined comparison plot: all_comparisons_combined.png")
 
+def generate_grarrph_stacked_bar_charts(all_runtimes, output_dir=OUTPUT_DIR):
+    """Generate stacked bar charts for grarrph detailed timing data."""
+    Path(output_dir).mkdir(exist_ok=True)
+    
+    # Get all graph types
+    graph_types = set()
+    for key in all_runtimes.get("DistributedGrarrph_cc", {}).keys():
+        graph_types.add(key[0])  # key[0] is the graph type
+    
+    for graph_type in graph_types:
+        # Get all configurations for this graph type
+        configs = [(key[1], key[2]) for key in all_runtimes.get("DistributedGrarrph_cc", {}).keys() 
+                  if key[0] == graph_type]
+        configs.sort()  # Sort by n, then m
+        
+        # Calculate grid dimensions
+        num_configs = len(configs)
+        num_cols = min(3, num_configs)  # Maximum 3 columns
+        num_rows = (num_configs + num_cols - 1) // num_cols
+        
+        # Create figure with subplots
+        fig, axes = plt.subplots(num_rows, num_cols, figsize=(6*num_cols, 5*num_rows))
+        if num_rows == 1 and num_cols == 1:
+            axes = np.array([axes])
+        axes = axes.flatten()
+        
+        # Plot each configuration
+        for idx, (log_n, log_m) in enumerate(configs):
+            key = (graph_type, log_n, log_m)
+            if key not in all_runtimes.get("DistributedGrarrph_cc", {}):
+                continue
+                
+            data = all_runtimes["DistributedGrarrph_cc"][key]
+            cores = sorted(data.keys())
+            
+            # Prepare data for stacked bar chart
+            components = [
+                "frontier_exchange",
+                "distance_exchange",
+                "frontier_deduplication",
+                "frontier_pruning",
+                "bfs_allreduce_global_active"
+            ]
+            
+            # Create x positions for bars
+            x = np.arange(len(cores))
+            width = 0.8  # Width of the bars
+            
+            # Create stacked bar data
+            bottom = np.zeros(len(cores))
+            for component in components:
+                values = [data[core].get(component, 0) for core in cores]
+                axes[idx].bar(x, values, width, bottom=bottom, label=component)
+                bottom += values
+            
+            # Set x-axis ticks to core counts
+            axes[idx].set_xticks(x)
+            axes[idx].set_xticklabels(cores)
+            
+            axes[idx].set_xlabel("Number of Cores")
+            axes[idx].set_ylabel("Time (seconds)")
+            axes[idx].set_title(f"{graph_type} n={log_n} m={log_m}")
+            axes[idx].legend()
+            axes[idx].grid(True)
+        
+        # Remove any unused subplots
+        for idx in range(len(configs), len(axes)):
+            fig.delaxes(axes[idx])
+        
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, f"grarrph_stacked_bars_{graph_type}.png"))
+        plt.close()
+        
+        print(f"Generated stacked bar chart: grarrph_stacked_bars_{graph_type}.png")
+
 def main():
     # Create output directory if it doesn't exist
     Path(OUTPUT_DIR).mkdir(exist_ok=True)
@@ -409,11 +539,15 @@ def main():
     print("\nGenerating all comparisons combined plot...")
     generate_all_comparisons_combined_plot(all_runtimes)
     
+    print("\nGenerating grarrph stacked bar charts...")
+    generate_grarrph_stacked_bar_charts(all_runtimes)
+    
     print("\nAnalysis completed. Results saved to:")
     print(f"- CSV files: {OUTPUT_DIR}/*.csv")
     print(f"- Performance plots: {OUTPUT_DIR}/performance_plots_*.png")
     print(f"- Comparison plots: {OUTPUT_DIR}/comparison_plots_*.png")
     print(f"- All comparisons combined plot: {OUTPUT_DIR}/all_comparisons_combined.png")
+    print(f"- Grarrph stacked bar charts: {OUTPUT_DIR}/grarrph_stacked_bars_*.png")
 
 if __name__ == "__main__":
     main()
