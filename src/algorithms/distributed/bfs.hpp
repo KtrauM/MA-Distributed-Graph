@@ -1,11 +1,10 @@
 #pragma once
 
 #include <kamping/collectives/allreduce.hpp>
-#include <set>
 #include "../../primitives/distributed_array.hpp"
 #include "../../primitives/distributed_set.hpp"
 #include "../common/graph.hpp"
-// #include <kamping/measurements/timer.hpp>
+#include <kamping/measurements/timer.hpp>
 
 class SetBasedDistributedFrontier {
 public:
@@ -57,19 +56,17 @@ public:
       : _graph(std::move(graph)), _initial_rank(comm.rank()), _comm(comm), _frontier(SetBasedDistributedFrontier(_comm, source_vertices)), _distances(_graph->vertex_dist, comm, std::numeric_limits<uint64_t>::max()) {}
 
   void run() {
-    // kamping::measurements::timer().start("bfs_total");
-    // std::cout << "Frontier print " << _frontier.toString() << " on PE " << _comm.rank() << "\n";
+    kamping::measurements::timer().start("bfs_total");
     auto current_frontier = _frontier.local_frontier(); // contains ids of vertices
-    // std::cout << "Frontier print after accessing local_frontier" << _frontier.toString() << " on PE " << _comm.rank() << "\n";
     bool local_active = !current_frontier.empty();
     bool global_active = true;
-    // kamping::measurements::timer().start("bfs_while_loop");
+    kamping::measurements::timer().start("bfs_while_loop");
 
     while (global_active) {
-      // kamping::measurements::timer().synchronize_and_start("bfs_iteration");
-      // std::cout << "Current frontier size " << current_frontier.size() << "\n";
+      kamping::measurements::timer().start("bfs_while_loop_single_iteration");
+      std::cout << "Current frontier size " << current_frontier.size() << "\n";
       for (VertexId vertex : current_frontier) {
-        // std::cout << "Setting vertex " << vertex << " distance to " << current_distance << "\n";
+        std::cout << "Setting vertex " << vertex << " distance to " << current_distance << "\n";
         _distances.set(vertex, current_distance, distributed::OperationType::MIN);
         if (_graph->vertex_dist->owner(vertex) != _initial_rank) {
           throw std::logic_error("Vertex " + std::to_string(vertex) + " belongs to another worker: " +
@@ -82,32 +79,35 @@ public:
           _frontier.add(neighbor);
         }
       }
-      // kamping::measurements::timer().stop();
-      // kamping::measurements::timer().synchronize_and_start("bfs_exchange");
+      kamping::measurements::timer().stop_and_add();
+      kamping::measurements::timer().start("frontier_exchange");
       _frontier.exchange([this](const size_t vertex_id) { return _graph->vertex_dist->owner(vertex_id); });
-      // std::cout << "Distance exchange\n";
+      kamping::measurements::timer().stop_and_add();
+      kamping::measurements::timer().start("distance_exchange");
       _distances.exchange(_comm);
-      // kamping::measurements::timer().stop();
+      kamping::measurements::timer().stop_and_add();
 
-      // kamping::measurements::timer().synchronize_and_start("bfs_local_frontier");
+      kamping::measurements::timer().start("frontier_deduplication");
       _frontier.deduplicate();
-      // prune visited vertices
+      kamping::measurements::timer().stop_and_add();
 
+
+      // prune visited vertices
+      kamping::measurements::timer().start("frontier_pruning");
       _frontier.filter([this](const VertexId vertex) { return _distances.get(vertex) != std::numeric_limits<uint64_t>::max(); });
       current_frontier = _frontier.local_frontier();
+      kamping::measurements::timer().stop_and_add();
+
       local_active = !current_frontier.empty();
       // kamping::measurements::timer().stop();
 
-      // kamping::measurements::timer().synchronize_and_start("bfs_allreduce");
+      kamping::measurements::timer().start("bfs_allreduce_global_active");
       global_active = _comm.allreduce_single(kamping::send_buf(local_active), kamping::op(kamping::ops::logical_or<>{}));
-      // kamping::measurements::timer().stop();
-
-      // kamping::measurements::timer().synchronize_and_start("bfs_increment_distance");
+      kamping::measurements::timer().stop_and_add();
       ++current_distance;
-      // kamping::measurements::timer().stop();
     }
-    // kamping::measurements::timer().stop();
-    // kamping::measurements::timer().stop();
+    kamping::measurements::timer().stop();
+    kamping::measurements::timer().stop();
   }
 
   const distributed::DistributedArray<uint64_t>& distances() const { return _distances; }
