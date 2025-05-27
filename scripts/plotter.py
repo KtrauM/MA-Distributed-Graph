@@ -10,16 +10,16 @@ import glob
 
 # Framework directories under experiment_data
 FRAMEWORK_DIRS = [
-    "combblas-cc-fileio_25_05_24",
-    "grarrph-cc_25_05_24",
-    "havoqgt-cc-kagen_25_05_24"
+    "combblas-cc-fileio",
+    "grarrph-cc",
+    "havoqgt-cc-kagen"
 ]
 
 # Map directory names to program names
 FRAMEWORK_TO_PROGRAM = {
-    "combblas-cc-fileio_25_05_24": "CombBLAS_cc",
-    "grarrph-cc_25_05_24": "DistributedGrarrph_cc",
-    "havoqgt-cc-kagen_25_05_24": "HavoqGT_cc"
+    "combblas-cc-fileio": "CombBLAS_cc",
+    "grarrph-cc": "DistributedGrarrph_cc",
+    "havoqgt-cc-kagen": "HavoqGT_cc"
 }
 
 # Algorithms
@@ -457,8 +457,8 @@ def generate_grarrph_stacked_bar_charts(all_runtimes, output_dir=OUTPUT_DIR):
         num_cols = min(3, num_configs)  # Maximum 3 columns
         num_rows = (num_configs + num_cols - 1) // num_cols
         
-        # Create figure with subplots
-        fig, axes = plt.subplots(num_rows, num_cols, figsize=(6*num_cols, 5*num_rows))
+        # Create figure with subplots - increased figure size
+        fig, axes = plt.subplots(num_rows, num_cols, figsize=(10*num_cols, 8*num_rows))
         if num_rows == 1 and num_cols == 1:
             axes = np.array([axes])
         axes = axes.flatten()
@@ -481,9 +481,9 @@ def generate_grarrph_stacked_bar_charts(all_runtimes, output_dir=OUTPUT_DIR):
                 "bfs_allreduce_global_active"
             ]
             
-            # Create x positions for bars
-            x = np.arange(len(cores))
-            width = 0.8  # Width of the bars
+            # Create x positions for bars with more spacing
+            x = np.arange(len(cores)) * 2  # Double the spacing between bars
+            width = 1.2  # Increased width of the bars
             
             # Create stacked bar data
             bottom = np.zeros(len(cores))
@@ -494,20 +494,26 @@ def generate_grarrph_stacked_bar_charts(all_runtimes, output_dir=OUTPUT_DIR):
             
             # Set x-axis ticks to core counts
             axes[idx].set_xticks(x)
-            axes[idx].set_xticklabels(cores)
+            axes[idx].set_xticklabels(cores, rotation=45, ha='right')
+            
+            # Add grid lines for better readability
+            axes[idx].grid(True, which="major", ls="-", alpha=0.2)
             
             axes[idx].set_xlabel("Number of Cores")
             axes[idx].set_ylabel("Time (seconds)")
             axes[idx].set_title(f"{graph_type} n={log_n} m={log_m}")
-            axes[idx].legend()
-            axes[idx].grid(True)
+            
+            # Move legend outside the plot to avoid overlapping
+            axes[idx].legend(bbox_to_anchor=(1.05, 1), loc='upper left')
         
         # Remove any unused subplots
         for idx in range(len(configs), len(axes)):
             fig.delaxes(axes[idx])
         
         plt.tight_layout()
-        plt.savefig(os.path.join(output_dir, f"grarrph_stacked_bars_{graph_type}.png"))
+        plt.savefig(os.path.join(output_dir, f"grarrph_stacked_bars_{graph_type}.png"), 
+                   bbox_inches='tight',  # Ensure legend is not cut off
+                   dpi=300)  # Higher resolution
         plt.close()
         
         print(f"Generated stacked bar chart: grarrph_stacked_bars_{graph_type}.png")
