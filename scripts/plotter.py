@@ -453,10 +453,11 @@ def generate_all_comparisons_combined_plot(all_runtimes, output_dir=OUTPUT_DIR):
             ax.grid(True)
             
             current_subplot += 1
-    
-    # Remove any unused subplots
-    for i in range(current_subplot, len(axes)):
-        fig.delaxes(axes[i])
+        
+        # If there are fewer plots in this row than max_plots_per_row, remove the extra subplots
+        while current_subplot % max_plots_per_row != 0:
+            fig.delaxes(axes[current_subplot])
+            current_subplot += 1
     
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, "all_comparisons_combined.png"))
