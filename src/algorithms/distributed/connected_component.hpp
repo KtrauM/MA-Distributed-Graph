@@ -10,7 +10,9 @@ public:
       : _graph(std::move(graph)), _comm(comm), _bfs_runner(graph, _comm, std::vector<VertexId>()) {}
 
   uint32_t run() {
-    std::cout << "CC started\n";
+    if (_comm.rank() == 0) {
+      std::cout << "CC started\n";
+    }
     int initial_rank = _comm.rank();
     size_t vertex_start = _graph->vertex_dist->to_global_index(initial_rank, 0);
     size_t vertex_end = vertex_start + _graph->vertex_dist->local_size(initial_rank);
@@ -64,7 +66,9 @@ public:
       : _graph(std::move(graph)), _comm(comm), _bfs_runner(graph, _comm, std::vector<VertexId>()) {}
 
   uint32_t run() {
-    std::cout << "CC started\n";
+    if (_comm.rank() == 0) {
+      std::cout << "CC started\n";
+    }
     int initial_rank = _comm.rank();
     size_t vertex_start = _graph->vertex_dist->to_global_index(initial_rank, 0);
     size_t vertex_end = vertex_start + _graph->vertex_dist->local_size(initial_rank);
@@ -78,18 +82,22 @@ public:
         SetBasedDistributedFrontier &frontier = _bfs_runner.frontier();
         const auto &distances = _bfs_runner.distances();
         if (vertex < vertex_end && distances.get(vertex) == std::numeric_limits<uint64_t>::max()) {
+          // std::cout << "Adding vertex " << vertex << " to frontier on PE " << _comm.rank() << "\n";
           frontier.add(vertex);
           num_components++;
         }
         kamping::measurements::timer().synchronize_and_start("bfs_run_iteration");
         _bfs_runner.run();
-        kamping::measurements::timer().stop();
+        kamping::measurements::timer().stop_and_add();
     }
 
     uint32_t total_components = _comm.allreduce_single(kamping::send_buf(num_components), kamping::op(kamping::ops::plus<uint32_t>{}));
     
     return total_components;
   }
+
+  uint32_t max_num_iterations() const { return _bfs_runner.max_num_iterations; }
+  uint32_t max_send_buffer_size() const { return _bfs_runner.max_send_buffer_size; }
 
 private:
   kamping::Communicator<> _comm;

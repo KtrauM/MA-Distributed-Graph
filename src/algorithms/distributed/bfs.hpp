@@ -41,6 +41,8 @@ public:
     return str;
   }
 
+
+  uint32_t max_send_buffer_size() const { return _frontier.max_send_buffer_size; }
   const void updateCommunicator(kamping::Communicator<> &new_comm) {
     _frontier.updateCommunicator(new_comm);
   }
@@ -55,14 +57,18 @@ public:
   DistributedBFS(std::shared_ptr<DistributedCSRGraph> graph, kamping::Communicator<> const &comm, std::vector<VertexId> source_vertices)
       : _graph(std::move(graph)), _initial_rank(comm.rank()), _comm(comm), _frontier(SetBasedDistributedFrontier(_comm, source_vertices)), _distances(_graph->vertex_dist, comm, std::numeric_limits<uint64_t>::max()) {}
 
+  uint32_t max_num_iterations = 0;
+  uint32_t max_send_buffer_size = 0;
   void run() {
     kamping::measurements::timer().start("bfs_total");
     const std::vector<VertexId> &current_frontier = _frontier.local_frontier(); // contains ids of vertices
     bool local_active = !current_frontier.empty();
     bool global_active = true;
     kamping::measurements::timer().start("bfs_while_loop");
-
+    uint32_t num_iterations = 0;
+    
     while (global_active) {
+      ++num_iterations;
       kamping::measurements::timer().start("bfs_while_loop_single_iteration");
       // std::cout << "Current frontier size on PE " << _comm.rank() << " is " << current_frontier.size() << "\n";
       std::vector<VertexId> neighbors;
@@ -110,6 +116,8 @@ public:
       kamping::measurements::timer().stop_and_add();
       ++current_distance;
     }
+    max_num_iterations = std::max(max_num_iterations, _comm.allreduce_single(kamping::send_buf(num_iterations), kamping::op(kamping::ops::max<uint32_t>{})));
+    max_send_buffer_size = std::max(max_send_buffer_size, _comm.allreduce_single(kamping::send_buf(_frontier.max_send_buffer_size()), kamping::op(kamping::ops::max<uint32_t>{})));
     kamping::measurements::timer().stop();
     kamping::measurements::timer().stop();
   }

@@ -73,13 +73,29 @@ def extract_grarrph_detailed_timing(log_path):
         frontier_pruning = output_json["data"]["root"]["run_cc"]["bfs_run_iteration"]["bfs_total"]["bfs_while_loop"]["frontier_pruning"]["statistics"]["max"][0]
         bfs_allreduce_global_active = output_json["data"]["root"]["run_cc"]["bfs_run_iteration"]["bfs_total"]["bfs_while_loop"]["bfs_allreduce_global_active"]["statistics"]["max"][0]
         
+        # Extract additional metrics from the log
+        num_components = None
+        max_iterations = None
+        max_send_buffer_size = None
+        
+        for line in output.split('\n'):
+            if "Num components" in line:
+                num_components = int(line.split("Num components")[1].strip())
+            elif "Max num iterations" in line:
+                max_iterations = int(line.split("Max num iterations")[1].strip())
+            elif "Max send buffer size" in line:
+                max_send_buffer_size = int(line.split("Max send buffer size")[1].strip())
+        
         return {
             "bfs_total": bfs_total,
             "frontier_exchange": frontier_exchange,
             "distance_exchange": distance_exchange,
             "frontier_deduplication": frontier_deduplication,
             "frontier_pruning": frontier_pruning,
-            "bfs_allreduce_global_active": bfs_allreduce_global_active
+            "bfs_allreduce_global_active": bfs_allreduce_global_active,
+            "num_components": num_components,
+            "max_iterations": max_iterations,
+            "max_send_buffer_size": max_send_buffer_size
         }
     except (json.JSONDecodeError, KeyError, ValueError) as e:
         print(f"Error parsing detailed timing data from {log_path}: {e}")
@@ -108,9 +124,16 @@ def extract_runtime_and_numccs_from_log(framework, log_path):
             key_type = "run_cc"
             runtime = output_json["data"]["root"][key_type]["statistics"]["max"][0]
             
+            # Extract numccs from the log
+            numccs = None
+            for line in output.split('\n'):
+                if "Num components" in line:
+                    numccs = int(line.split("Num components")[1].strip())
+                    break
+            
             # Extract detailed timing data
             detailed_timing = extract_grarrph_detailed_timing(log_path)
-            return runtime, None, detailed_timing
+            return runtime, numccs, detailed_timing
         except (json.JSONDecodeError, KeyError, ValueError) as e:
             print(f"Error parsing program output for {log_path}: {e}")
             return None, None, None
@@ -195,7 +218,8 @@ def save_to_csv(all_runtimes, output_dir=OUTPUT_DIR):
                 elif program == "DistributedGrarrph_cc":
                     writer.writerow(['Cores', 'Runtime', 'NumCCs', 'bfs_total', 'frontier_exchange', 
                                    'distance_exchange', 'frontier_deduplication', 'frontier_pruning',
-                                   'bfs_allreduce_global_active'])
+                                   'bfs_allreduce_global_active', 'num_components', 'max_iterations',
+                                   'max_send_buffer_size'])
                 else:
                     writer.writerow(['Cores', 'Runtime'])
                 
@@ -211,7 +235,10 @@ def save_to_csv(all_runtimes, output_dir=OUTPUT_DIR):
                             entry.get("distance_exchange", ""),
                             entry.get("frontier_deduplication", ""),
                             entry.get("frontier_pruning", ""),
-                            entry.get("bfs_allreduce_global_active", "")
+                            entry.get("bfs_allreduce_global_active", ""),
+                            entry.get("num_components", ""),
+                            entry.get("max_iterations", ""),
+                            entry.get("max_send_buffer_size", "")
                         ])
                     else:
                         writer.writerow([cores, entry["runtime"]])
@@ -491,6 +518,13 @@ def generate_grarrph_stacked_bar_charts(all_runtimes, output_dir=OUTPUT_DIR):
                 values = [data[core].get(component, 0) for core in cores]
                 axes[idx].bar(x, values, width, bottom=bottom, label=component)
                 bottom += values
+            
+            # Add metrics text above each bar
+            for i, core in enumerate(cores):
+                metrics = data[core]
+                if all(k in metrics for k in ["max_iterations", "max_send_buffer_size"]):
+                    text = f"CCs: {metrics.get('numccs', 'N/A')}\nIters: {metrics['max_iterations']}\nBuf: {metrics['max_send_buffer_size']}"
+                    axes[idx].text(x[i], bottom[i], text, ha='center', va='bottom', fontsize=6)
             
             # Set x-axis ticks to core counts
             axes[idx].set_xticks(x)
