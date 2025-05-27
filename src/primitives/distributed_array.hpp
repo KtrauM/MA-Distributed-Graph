@@ -94,10 +94,17 @@ public:
     std::vector<ArrayUpdate<T>> send_buffer;
     std::vector<ArrayUpdate<T>> recv_buffer;
 
+    uint32_t send_buffer_size = 0;
     for (int rank = 0; rank < sub_comm.size(); ++rank) {
         const auto& updates = _outgoing_data[rank];
         send_counts[rank] = updates.size();
-        send_buffer.insert(send_buffer.end(), updates.begin(), updates.end());
+        send_buffer_size += send_counts[rank];
+    }
+    
+    send_buffer.reserve(send_buffer_size);
+    for (int rank = 0; rank < sub_comm.size(); ++rank) {
+      const auto& updates = _outgoing_data[rank];
+      send_buffer.insert(send_buffer.end(), updates.begin(), updates.end());
     }
 
     sub_comm.alltoallv(kamping::send_buf(send_buffer), kamping::send_counts(send_counts), kamping::recv_buf<kamping::BufferResizePolicy::grow_only>(recv_buffer));

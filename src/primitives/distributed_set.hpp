@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <vector>
 #include <functional>
+#include <kamping/measurements/timer.hpp>
 
 namespace distributed {
 
@@ -72,14 +73,21 @@ public:
 
     std::vector<int> send_counts(_comm.size(), 0);
     std::vector<T> send_buffer;
-
+    uint32_t send_buffer_size = 0;
     for (int rank = 0; rank < _comm.size(); ++rank) {
       send_counts[rank] = outgoing_data[rank].size();
+      send_buffer_size += send_counts[rank];
+    }
+
+    send_buffer.reserve(send_buffer_size);
+    for (int rank = 0; rank < _comm.size(); ++rank) {
       send_buffer.insert(send_buffer.end(), outgoing_data[rank].begin(), outgoing_data[rank].end());
     }
 
     _local_data.clear();
+    kamping::measurements::timer().start("frontier_exchange_alltoall");
     _comm.alltoallv(kamping::send_buf(send_buffer), kamping::send_counts(send_counts), kamping::recv_buf<kamping::BufferResizePolicy::resize_to_fit>(_local_data));
+    kamping::measurements::timer().stop_and_add();
   }
  
   const std::vector<T> &local_data() const { return _local_data; }
