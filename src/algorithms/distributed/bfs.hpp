@@ -57,16 +57,17 @@ public:
 
   void run() {
     kamping::measurements::timer().start("bfs_total");
-    auto current_frontier = _frontier.local_frontier(); // contains ids of vertices
+    const std::vector<VertexId> &current_frontier = _frontier.local_frontier(); // contains ids of vertices
     bool local_active = !current_frontier.empty();
     bool global_active = true;
     kamping::measurements::timer().start("bfs_while_loop");
 
     while (global_active) {
       kamping::measurements::timer().start("bfs_while_loop_single_iteration");
-      std::cout << "Current frontier size " << current_frontier.size() << "\n";
+      // std::cout << "Current frontier size on PE " << _comm.rank() << " is " << current_frontier.size() << "\n";
+      std::vector<VertexId> neighbors;
       for (VertexId vertex : current_frontier) {
-        std::cout << "Setting vertex " << vertex << " distance to " << current_distance << "\n";
+        // std::cout << "Setting vertex " << vertex << " distance to " << current_distance << " on PE " << _comm.rank() << "\n";
         _distances.set(vertex, current_distance, distributed::OperationType::MIN);
         if (_graph->vertex_dist->owner(vertex) != _initial_rank) {
           throw std::logic_error("Vertex " + std::to_string(vertex) + " belongs to another worker: " +
@@ -76,12 +77,17 @@ public:
         auto [edge_index_start, edge_index_end] = _graph->vertex_array.get(vertex);
         for (EdgeId i = edge_index_start; i < edge_index_end; ++i) {
           VertexId neighbor = _graph->edge_array.get(i);
-          _frontier.add(neighbor);
+          // std::cout << "Adding neighbor " << neighbor << " to frontier on PE " << _comm.rank() << "\n";
+          neighbors.push_back(neighbor);
         }
+      }
+      for (VertexId neighbor : neighbors) {
+        _frontier.add(neighbor);
       }
       kamping::measurements::timer().stop_and_add();
       kamping::measurements::timer().start("frontier_exchange");
       _frontier.exchange([this](const size_t vertex_id) { return _graph->vertex_dist->owner(vertex_id); });
+
       kamping::measurements::timer().stop_and_add();
       kamping::measurements::timer().start("distance_exchange");
       _distances.exchange(_comm);
@@ -91,11 +97,9 @@ public:
       _frontier.deduplicate();
       kamping::measurements::timer().stop_and_add();
 
-
       // prune visited vertices
       kamping::measurements::timer().start("frontier_pruning");
       _frontier.filter([this](const VertexId vertex) { return _distances.get(vertex) != std::numeric_limits<uint64_t>::max(); });
-      current_frontier = _frontier.local_frontier();
       kamping::measurements::timer().stop_and_add();
 
       local_active = !current_frontier.empty();
