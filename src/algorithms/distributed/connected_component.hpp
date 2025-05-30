@@ -3,6 +3,7 @@
 #include "../common/graph.hpp"
 #include "bfs.hpp"
 #include <kamping/measurements/timer.hpp>
+#include "min_label_propagation.hpp"
 
 class BFSBasedDistributedConnectedComponentWithSubCommOptimization {
 public:
@@ -82,7 +83,6 @@ public:
         SetBasedDistributedFrontier &frontier = _bfs_runner.frontier();
         const auto &distances = _bfs_runner.distances();
         if (vertex < vertex_end && distances.get(vertex) == std::numeric_limits<uint64_t>::max()) {
-          // std::cout << "Adding vertex " << vertex << " to frontier on PE " << _comm.rank() << "\n";
           frontier.add(vertex);
           num_components++;
         }
@@ -105,12 +105,27 @@ private:
   std::shared_ptr<DistributedCSRGraph> _graph;
 };
 
-// class LabelPropagationBasedDistributedConnectedComponent {
-// public:
-//   LabelPropagationBasedDistributedConnectedComponent(std::shared_ptr<DistributedCSRGraph> graph, kamping::Communicator<> const &comm)
-//       : _graph(std::move(graph)), _comm(comm) {}
+class LabelPropagationBasedDistributedConnectedComponent {
+public:
+  LabelPropagationBasedDistributedConnectedComponent(std::shared_ptr<DistributedCSRGraph> graph, kamping::Communicator<> const &comm)
+      : _graph(std::move(graph)), _comm(comm), _label_propagation_runner(comm, graph), _unique_labels(comm) {}
 
-//   uint32_t run() {
+  uint32_t run() {
+    _label_propagation_runner.run();
+    std::vector<Label> &local_labels = _label_propagation_runner.labels().local_data();
+    for (VertexId vertex = 0; vertex < local_labels.size(); ++vertex) {
+      _unique_labels.insert(local_labels[vertex]);
+    }
+    _unique_labels.deduplicate();
+    _unique_labels.redistribute([this](const Label label) { return _graph->vertex_dist->owner(label); });
+    _unique_labels.deduplicate();
+    uint32_t num_components = _comm.allreduce_single(kamping::send_buf((uint32_t)_unique_labels.local_data().size()), kamping::op(kamping::ops::plus<uint32_t>{}));
+    return num_components;
+  }
 
-//   }
-// };
+  private:
+  MinLabelPropagation _label_propagation_runner;
+  kamping::Communicator<> _comm;
+  std::shared_ptr<DistributedCSRGraph> _graph;
+  distributed::DistributedSet<Label> _unique_labels;
+};
