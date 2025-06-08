@@ -59,17 +59,19 @@ public:
 
   uint32_t max_num_iterations = 0;
   uint32_t max_send_buffer_size = 0;
+  uint64_t total_foreign_neighbors = 0;
+
   void run() {
-    kamping::measurements::timer().start("bfs_total");
+    // kamping::measurements::timer().start("bfs_total");
     const std::vector<VertexId> &current_frontier = _frontier.local_frontier(); // contains ids of vertices
     bool local_active = !current_frontier.empty();
     bool global_active = true;
-    kamping::measurements::timer().start("bfs_while_loop");
+    // kamping::measurements::timer().start("bfs_while_loop");
     uint32_t num_iterations = 0;
     
     while (global_active) {
       ++num_iterations;
-      kamping::measurements::timer().start("bfs_while_loop_single_iteration");
+      // kamping::measurements::timer().start("bfs_while_loop_single_iteration");
       // std::cout << "Current frontier size on PE " << _comm.rank() << " is " << current_frontier.size() << "\n";
       std::vector<VertexId> neighbors;
       for (VertexId vertex : current_frontier) {
@@ -87,39 +89,51 @@ public:
           neighbors.push_back(neighbor);
         }
       }
+      uint32_t foreign_neighbors = 0;
       for (VertexId neighbor : neighbors) {
+        if (_graph->vertex_dist->owner(neighbor) != _comm.rank()) {
+          foreign_neighbors++;
+        }
         _frontier.add(neighbor);
       }
-      kamping::measurements::timer().stop_and_add();
-      kamping::measurements::timer().start("frontier_exchange");
+      // kamping::measurements::timer().stop_and_add();
+      
+      // collect all the foreign neighbors to PE 0
+      std::vector<uint32_t> foreign_neighbors_all(foreign_neighbors);
+      _comm.gather(kamping::send_buf(std::vector<uint32_t>{foreign_neighbors}), kamping::recv_buf<kamping::BufferResizePolicy::resize_to_fit>(foreign_neighbors_all));
+      if (_comm.rank() == 0) {
+        for (uint32_t i = 0; i < foreign_neighbors_all.size(); ++i) {
+          // std::cout << "Foreign neighbors on PE " << i << ": " << foreign_neighbors_all[i] << "\n";
+          total_foreign_neighbors += foreign_neighbors_all[i];
+        }
+        // std::cout << "-----------------------------------------\n";
+      }
+      _comm.barrier();
+      // kamping::measurements::timer().start("frontier_exchange");
       _frontier.exchange([this](const size_t vertex_id) { return _graph->vertex_dist->owner(vertex_id); });
+      // kamping::measurements::timer().stop_and_add();
 
-      kamping::measurements::timer().stop_and_add();
-      kamping::measurements::timer().start("distance_exchange");
-      _distances.exchange(_comm);
-      kamping::measurements::timer().stop_and_add();
-
-      kamping::measurements::timer().start("frontier_deduplication");
+      // kamping::measurements::timer().start("frontier_deduplication");
       _frontier.deduplicate();
-      kamping::measurements::timer().stop_and_add();
+      // kamping::measurements::timer().stop_and_add();
 
       // prune visited vertices
-      kamping::measurements::timer().start("frontier_pruning");
+      // kamping::measurements::timer().start("frontier_pruning");
       _frontier.filter([this](const VertexId vertex) { return _distances.get(vertex) != std::numeric_limits<uint64_t>::max(); });
-      kamping::measurements::timer().stop_and_add();
+      // kamping::measurements::timer().stop_and_add();
 
       local_active = !current_frontier.empty();
-      // kamping::measurements::timer().stop();
+      // // kamping::measurements::timer().stop();
 
-      kamping::measurements::timer().start("bfs_allreduce_global_active");
+      // kamping::measurements::timer().start("bfs_allreduce_global_active");
       global_active = _comm.allreduce_single(kamping::send_buf(local_active), kamping::op(kamping::ops::logical_or<>{}));
-      kamping::measurements::timer().stop_and_add();
+      // kamping::measurements::timer().stop_and_add();
       ++current_distance;
     }
     max_num_iterations = std::max(max_num_iterations, _comm.allreduce_single(kamping::send_buf(num_iterations), kamping::op(kamping::ops::max<uint32_t>{})));
     max_send_buffer_size = std::max(max_send_buffer_size, _comm.allreduce_single(kamping::send_buf(_frontier.max_send_buffer_size()), kamping::op(kamping::ops::max<uint32_t>{})));
-    kamping::measurements::timer().stop();
-    kamping::measurements::timer().stop();
+    // kamping::measurements::timer().stop();
+    // kamping::measurements::timer().stop();
   }
 
   const distributed::DistributedArray<uint64_t>& distances() const { return _distances; }
@@ -127,6 +141,8 @@ public:
   SetBasedDistributedFrontier &frontier() {
     return _frontier;
   }
+
+  uint64_t get_current_distance() const { return current_distance; }
 
   const void updateCommunicator(kamping::Communicator<> &new_comm) {
     _comm = new_comm;

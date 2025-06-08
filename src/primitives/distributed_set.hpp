@@ -85,9 +85,9 @@ public:
     max_send_buffer_size = std::max(max_send_buffer_size, send_buffer_size);
 
     std::vector<T> recv_buffer;
-    kamping::measurements::timer().start("frontier_exchange_alltoall");
+    // kamping::measurements::timer().start("frontier_exchange_alltoall");
     _comm.alltoallv(kamping::send_buf(send_buffer), kamping::send_counts(send_counts), kamping::recv_buf<kamping::BufferResizePolicy::resize_to_fit>(recv_buffer));
-    kamping::measurements::timer().stop_and_add();
+    // kamping::measurements::timer().stop_and_add();
 
     filter([this,mapping](const T& element) { return mapping(element) != _comm.rank(); });
     _local_data.reserve(_local_data.size() + recv_buffer.size());
@@ -98,6 +98,14 @@ public:
     //   std::cout << _local_data[i] << " ";
     // }
     // std::cout << "\n";
+  }
+
+  void redistribute(std::function<int(const T&)> mapping, bool join_communication) {
+    kamping::Communicator<> old_comm = _comm;
+    kamping::Communicator<> sub_comm = _comm.split(join_communication);
+    _comm = sub_comm;
+    redistribute(mapping);
+    _comm = old_comm;
   }
 
 // void redistribute(std::function<int(const T&)> mapping) {

@@ -112,15 +112,17 @@ int main(int argc, char **argv) {
       DistributedCSRGraph(std::move(vertex_array), std::move(edge_array), std::make_shared<BlockDistribution>(vertex_strategy));
 
   // Run CC based on BFS
-  LabelPropagationBasedDistributedConnectedComponent cc = 
-      LabelPropagationBasedDistributedConnectedComponent(std::make_shared<DistributedCSRGraph>(std::move(graph)), comm);
+  BFSBasedDistributedConnectedComponent cc = 
+      BFSBasedDistributedConnectedComponent(std::make_shared<DistributedCSRGraph>(std::move(graph)), comm);
   kamping::measurements::timer().stop();
   kamping::measurements::timer().synchronize_and_start("run_cc");
   uint32_t num_components = cc.run();
   if (comm.rank() == 0) {
+    std::cout << "Num PEs: " << comm.size() << "\n";
     std::cout << "Num components " << num_components << "\n";
     // std::cout << "Max num iterations " << cc.max_num_iterations() << "\n";
     // std::cout << "Max send buffer size " << cc.max_send_buffer_size() << "\n";
+    // std::cout << "Total foreign neighbors " << cc.total_foreign_neighbors() << "\n";
   }
   kamping::measurements::timer().stop();
 

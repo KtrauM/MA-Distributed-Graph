@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <unordered_map>
 #include <vector>
+#include <kamping/measurements/timer.hpp>
 
 namespace distributed {
 
@@ -77,7 +78,7 @@ public:
       return;
     }
     // Data is non-local
-    // std::cout << "Set delegated to exchange as the index is not local, update value: " << value << "\n";
+    std::cout << "Set delegated to exchange as the index is not local, update value: " << value << "\n";
     _outgoing_data[owner].push_back({global_index, value, operation_type});
   }
 
@@ -97,6 +98,9 @@ public:
     uint32_t send_buffer_size = 0;
     for (int rank = 0; rank < sub_comm.size(); ++rank) {
         const auto& updates = _outgoing_data[rank];
+        if (updates.size() > 0) {
+            std::cout << "PE " << _comm.rank() << " sending " << updates.size() << " updates to PE " << rank << "\n";
+        }
         send_counts[rank] = updates.size();
         send_buffer_size += send_counts[rank];
     }
@@ -107,7 +111,10 @@ public:
       send_buffer.insert(send_buffer.end(), updates.begin(), updates.end());
     }
 
+    std::cout << "PE " << _comm.rank() << " sending " << send_buffer.size() << " updates to all PEs\n";
+    kamping::measurements::timer().start("distance_alltoallv");
     sub_comm.alltoallv(kamping::send_buf(send_buffer), kamping::send_counts(send_counts), kamping::recv_buf<kamping::BufferResizePolicy::grow_only>(recv_buffer));
+    kamping::measurements::timer().stop_and_add();
 
     for (const auto &update : recv_buffer) {
       size_t local_index = _strategy->to_local_index(_comm.rank(), update.global_index);
