@@ -77,6 +77,9 @@ def extract_grarrph_detailed_timing(log_path):
         num_components = None
         max_iterations = None
         max_send_buffer_size = None
+        max_recv_buffer_size = None
+        max_send_count = None
+        num_bfs_turns = None
         
         for line in output.split('\n'):
             if "Num components" in line:
@@ -85,6 +88,12 @@ def extract_grarrph_detailed_timing(log_path):
                 max_iterations = int(line.split("Max num iterations")[1].strip())
             elif "Max send buffer size" in line:
                 max_send_buffer_size = int(line.split("Max send buffer size")[1].strip())
+            elif "Max recv buffer size" in line:
+                max_recv_buffer_size = int(line.split("Max recv buffer size")[1].strip())
+            elif "Max send count" in line:
+                max_send_count = int(line.split("Max send count")[1].strip())
+            elif "Number of bfs turns" in line:
+                num_bfs_turns = int(line.split("Number of bfs turns")[1].strip())
         
         return {
             "bfs_total": bfs_total,
@@ -95,7 +104,10 @@ def extract_grarrph_detailed_timing(log_path):
             "bfs_allreduce_global_active": bfs_allreduce_global_active,
             "num_components": num_components,
             "max_iterations": max_iterations,
-            "max_send_buffer_size": max_send_buffer_size
+            "max_send_buffer_size": max_send_buffer_size,
+            "max_recv_buffer_size": max_recv_buffer_size,
+            "max_send_count": max_send_count,
+            "num_bfs_turns": num_bfs_turns
         }
     except (json.JSONDecodeError, KeyError, ValueError) as e:
         print(f"Error parsing detailed timing data from {log_path}: {e}")
@@ -219,7 +231,7 @@ def save_to_csv(all_runtimes, output_dir=OUTPUT_DIR):
                     writer.writerow(['Cores', 'Runtime', 'NumCCs', 'bfs_total', 'frontier_exchange', 
                                    'distance_exchange', 'frontier_deduplication', 'frontier_pruning',
                                    'bfs_allreduce_global_active', 'num_components', 'max_iterations',
-                                   'max_send_buffer_size'])
+                                   'max_send_buffer_size', 'max_recv_buffer_size'])
                 else:
                     writer.writerow(['Cores', 'Runtime'])
                 
@@ -238,7 +250,8 @@ def save_to_csv(all_runtimes, output_dir=OUTPUT_DIR):
                             entry.get("bfs_allreduce_global_active", ""),
                             entry.get("num_components", ""),
                             entry.get("max_iterations", ""),
-                            entry.get("max_send_buffer_size", "")
+                            entry.get("max_send_buffer_size", ""),
+                            entry.get("max_recv_buffer_size", "")
                         ])
                     else:
                         writer.writerow([cores, entry["runtime"]])
@@ -523,8 +536,8 @@ def generate_grarrph_stacked_bar_charts(all_runtimes, output_dir=OUTPUT_DIR):
             # Add metrics text above each bar
             for i, core in enumerate(cores):
                 metrics = data[core]
-                if all(k in metrics for k in ["max_iterations", "max_send_buffer_size"]):
-                    text = f"CCs: {metrics.get('numccs', 'N/A')}\nIters: {metrics['max_iterations']}\nBuf: {metrics['max_send_buffer_size']}"
+                if all(k in metrics for k in ["max_iterations", "max_send_buffer_size", "max_recv_buffer_size", "max_send_count", "num_bfs_turns"]):
+                    text = f"CCs: {metrics.get('numccs', 'N/A')}\nIters: {metrics['max_iterations']}\nSend: {metrics['max_send_buffer_size']}\nRecv: {metrics['max_recv_buffer_size']}\nSendCnt: {metrics['max_send_count']}\nBFSTurns: {metrics['num_bfs_turns']}"
                     axes[idx].text(x[i], bottom[i], text, ha='center', va='bottom', fontsize=6)
             
             # Set x-axis ticks to core counts

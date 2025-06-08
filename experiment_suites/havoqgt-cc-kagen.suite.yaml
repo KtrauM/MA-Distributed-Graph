@@ -1,104 +1,120 @@
-name: combblas-cc-kagen
-executable: ../baseline_frameworks/CombBLAS/build/Applications/bfscc
-ncores: [1, 4, 16, 64, 256, 1024]
+name: havoqgt-cc-kagen
+executable: ../baseline_frameworks/havoqgt/build/src/run_kagen_cc
+ncores: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
 time_limit: 15
 threads_per_rank: [1]
 graphs:
-  - generator: run-combblas-kagen
+  - generator: run-grarrph
     type: rmat
     N: 12
     M: 15
     scale_weak: TRUE
-  - generator: run-combblas-kagen
+  - generator: run-grarrph
     type: rgg2d
     N: 12
     M: 15
     scale_weak: TRUE
-  - generator: run-combblas-kagen
+  - generator: run-grarrph
     type: rgg3d
     N: 12
     M: 15
     scale_weak: TRUE
-  - generator: run-combblas-kagen
+  - generator: run-grarrph
     type: gnm-undirected
     N: 12
     M: 15
     scale_weak: TRUE
-  - generator: run-combblas-kagen
+  - generator: run-grarrph
     type: rhg
     N: 12
     M: 15
     gamma: 2.6
     scale_weak: TRUE
-  - generator: run-combblas-kagen
+  - generator: run-grarrph
+    type: rhg
+    N: 12
+    M: 11
+    gamma: 2.6
+    scale_weak: TRUE
+  - generator: run-grarrph
     type: rmat
     N: 12
     M: 11
     scale_weak: TRUE
-  - generator: run-combblas-kagen
+  - generator: run-grarrph
     type: rgg2d
     N: 12
     M: 11
     scale_weak: TRUE
-  - generator: run-combblas-kagen
+  - generator: run-grarrph
     type: rgg3d
     N: 12
     M: 11
     scale_weak: TRUE
-  - generator: run-combblas-kagen
+  - generator: run-grarrph
     type: gnm-undirected
     N: 12
     M: 11
     scale_weak: TRUE
-  - generator: run-combblas-kagen
+  - generator: run-grarrph
     type: rmat
     N: 14
     M: 14
     scale_weak: TRUE
-  - generator: run-combblas-kagen
+  - generator: run-grarrph
     type: rgg2d
     N: 14
     M: 14
     scale_weak: TRUE
-  - generator: run-combblas-kagen
+  - generator: run-grarrph
     type: rgg3d
     N: 14
     M: 14
     scale_weak: TRUE
-  - generator: run-combblas-kagen
+  - generator: run-grarrph
     type: gnm-undirected
     N: 14
     M: 14
     scale_weak: TRUE
-  - generator: run-combblas-kagen
+  - generator: run-grarrph
     type: rhg
     N: 14
     M: 14
     gamma: 2.6
     scale_weak: TRUE
-  - generator: run-combblas-kagen
+  - generator: run-grarrph
     type: rmat
     N: 14
     M: 16
     scale_weak: TRUE
-  - generator: run-combblas-kagen
+  - generator: run-grarrph
     type: rgg2d
     N: 14
     M: 16
     scale_weak: TRUE
-  - generator: run-combblas-kagen
+  - generator: run-grarrph
     type: rgg3d
     N: 14
     M: 16
     scale_weak: TRUE
-  - generator: run-combblas-kagen
+  - generator: run-grarrph
     type: gnm-undirected
     N: 14
     M: 16
     scale_weak: TRUE
-  - generator: run-combblas-kagen
+  - generator: run-grarrph
     type: rhg
     N: 14
     M: 16
     gamma: 2.6
+    scale_weak: TRUE
+  - generator: run-grarrph
+    type: gnm-undirected
+    N: 18
+    M: 20
+    scale_weak: TRUE
+  - generator: run-grarrph
+    type: gnm-undirected
+    N: 18
+    M: 17
     scale_weak: TRUE

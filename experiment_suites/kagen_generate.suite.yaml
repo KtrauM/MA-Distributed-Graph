@@ -1,7 +1,7 @@
 name: graph_gen
 executable: external/KaGen/app/KaGen
-ncores: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
-time_limit: 6
+ncores: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+time_limit: 15
 threads_per_rank: [1]
 graphs:
   - generator: kagen
@@ -29,4 +29,92 @@ graphs:
     N: 12
     M: 15
     gamma: 2.6
+    scale_weak: TRUE
+  - generator: kagen
+    type: rhg
+    N: 12
+    M: 11
+    gamma: 2.6
+    scale_weak: TRUE
+  - generator: kagen
+    type: rmat
+    N: 12
+    M: 11
+    scale_weak: TRUE
+  - generator: kagen
+    type: rgg2d
+    N: 12
+    M: 11
+    scale_weak: TRUE
+  - generator: kagen
+    type: rgg3d
+    N: 12
+    M: 11
+    scale_weak: TRUE
+  - generator: kagen
+    type: gnm-undirected
+    N: 12
+    M: 11
+    scale_weak: TRUE
+  - generator: kagen
+    type: rmat
+    N: 14
+    M: 14
+    scale_weak: TRUE
+  - generator: kagen
+    type: rgg2d
+    N: 14
+    M: 14
+    scale_weak: TRUE
+  - generator: kagen
+    type: rgg3d
+    N: 14
+    M: 14
+    scale_weak: TRUE
+  - generator: kagen
+    type: gnm-undirected
+    N: 14
+    M: 14
+    scale_weak: TRUE
+  - generator: kagen
+    type: rhg
+    N: 14
+    M: 14
+    gamma: 2.6
+    scale_weak: TRUE
+  - generator: kagen
+    type: rmat
+    N: 14
+    M: 16
+    scale_weak: TRUE
+  - generator: kagen
+    type: rgg2d
+    N: 14
+    M: 16
+    scale_weak: TRUE
+  - generator: kagen
+    type: rgg3d
+    N: 14
+    M: 16
+    scale_weak: TRUE
+  - generator: kagen
+    type: gnm-undirected
+    N: 14
+    M: 16
+    scale_weak: TRUE
+  - generator: kagen
+    type: rhg
+    N: 14
+    M: 16
+    gamma: 2.6
+    scale_weak: TRUE
+  - generator: kagen
+    type: gnm-undirected
+    N: 18
+    M: 20
+    scale_weak: TRUE
+  - generator: kagen
+    type: gnm-undirected
+    N: 18
+    M: 17
     scale_weak: TRUE
